@@ -1,5 +1,5 @@
 ---
-title: "Get started with Axis in 5 steps"
+title: "Axis Quickstart: From Signup to Live Payment in 5 Steps"
 sidebarTitle: "Quickstart"
 description: "Create a business account, provision a wallet, fund it, issue an API key, and fire your first payment — end-to-end in under 10 minutes."
 ---
@@ -10,6 +10,8 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
 
   <Step title="Sign up">
     Create an Axis account by posting your credentials and account type to the auth endpoint. Use `accountType: "business"` if you are setting up payment infrastructure for a product, or `"developer"` for personal/sandbox use.
+
+    When you sign up with `accountType: "business"`, Axis automatically provisions a business record and returns a `businessId` in the response — no separate business registration call is needed at this step.
 
     **Request**
 
@@ -35,22 +37,21 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
 
     ```json
     {
-      "success": true,
-      "message": "Account created successfully",
+      "status": "success",
       "data": {
         "user": {
-          "id": "usr_01hq9xkv3e5n7p2m8c4w",
+          "id": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
           "email": "ada@paystackdemo.io",
           "accountType": "business",
+          "businessId": "b9e2d104-3c7f-4a1b-8e5d-2f0c9a4b6e31",
           "createdAt": "2025-01-15T09:00:00.000Z"
         },
-        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ1c3JfMDFocTl4a3YzZTVuN3AybThjNHciLCJpYXQiOjE3MDUzMTIwMDB9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "expiresIn": "24h"
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhM2Y3YzI5MS04YjRlLTRkMmEtOWYxYy0wZTViN2QzYTZjODIiLCJhY2NvdW50VHlwZSI6ImJ1c2luZXNzIiwiYnVzaW5lc3NJZCI6ImI5ZTJkMTA0LTNjN2YtNGExYi04ZTVkLTJmMGM5YTRiNmUzMSIsImlhdCI6MTcwNTMxMjAwMH0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
       }
     }
     ```
 
-    Store the `token` — you will send it as `Authorization: Bearer <token>` on every subsequent developer-authenticated request.
+    Store the `token` — you will send it as `Authorization: Bearer <token>` on every subsequent developer-authenticated request. Tokens expire after **7 days**.
   </Step>
 
   <Step title="Register your business">
@@ -81,10 +82,9 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
 
     ```json
     {
-      "success": true,
-      "message": "Business registered successfully",
+      "status": "success",
       "data": {
-        "businessId": "biz_01hq9xkv7f6n8q3m9d5y",
+        "businessId": "b9e2d104-3c7f-4a1b-8e5d-2f0c9a4b6e31",
         "businessName": "Paystack Demo Ltd",
         "contactEmail": "ada@paystackdemo.io",
         "contactPhone": "+2348012345678",
@@ -115,7 +115,7 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
       -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
       -d '{
         "name": "procurement-agent-wallet",
-        "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+        "userId": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
         "spendLimitPerTx": 500000,
         "spendLimitPeriod": 5000000,
         "periodWindowDays": 30,
@@ -128,7 +128,7 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
     ```json
     {
       "name": "procurement-agent-wallet",
-      "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+      "userId": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
       "spendLimitPerTx": 500000,
       "spendLimitPeriod": 5000000,
       "periodWindowDays": 30,
@@ -142,13 +142,12 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
 
     ```json
     {
-      "success": true,
-      "message": "Wallet created successfully",
+      "status": "success",
       "data": {
         "wallet": {
           "id": "wal_01hq9xkv9g7o0r4n0e6z",
           "name": "procurement-agent-wallet",
-          "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+          "userId": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
           "balance": 0,
           "spendLimitPerTx": 500000,
           "spendLimitPeriod": 5000000,
@@ -161,8 +160,8 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
         },
         "apiKey": {
           "id": "key_01hq9xkvah8p1s5o1f7a",
-          "prefix": "axk_live_",
-          "fullKey": "axk_live_4f8c2e1a9d3b7f6e0c5a2d8b1e4f7c0a9d3b6e2f5c8a1d4b7e0f3c6a9d2b5e8f",
+          "prefix": "ax_live_3f9a1c",
+          "fullKey": "ax_live_3f9a1c0b2e7d4a8f5c1e3b9d2a7f0c4e8b1d5a3f7c2e9b4d0a6f8c1e3b5d2a7f4",
           "walletId": "wal_01hq9xkv9g7o0r4n0e6z",
           "createdAt": "2025-01-15T09:03:00.000Z"
         },
@@ -179,7 +178,7 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
     ```
 
     <Warning>
-      The `apiKey.fullKey` value is returned **exactly once** — at wallet creation. Axis stores only a hashed version and cannot recover the plain-text key later. Copy `fullKey` into a secure secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or your CI/CD environment variables) immediately. If it is lost, you must rotate the key and update your agent's configuration.
+      The `apiKey.fullKey` value is returned **exactly once** — at wallet creation. Axis stores only a hashed version and cannot recover the plain-text key later. Copy `fullKey` into a secure secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or your CI/CD environment variables) immediately. If it is lost, you must create a new wallet to obtain a fresh key.
     </Warning>
   </Step>
 
@@ -226,7 +225,7 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
     ```bash
     curl -X POST https://your-axis-instance.com/api/payment-intent \
       -H "Content-Type: application/json" \
-      -H "x-api-key: axk_live_4f8c2e1a9d3b7f6e0c5a2d8b1e4f7c0a9d3b6e2f5c8a1d4b7e0f3c6a9d2b5e8f" \
+      -H "x-api-key: ax_live_3f9a1c0b2e7d4a8f5c1e3b9d2a7f0c4e8b1d5a3f7c2e9b4d0a6f8c1e3b5d2a7f4" \
       -d '{
         "amount": 250000,
         "merchantName": "Dangote Cement",
@@ -258,8 +257,7 @@ This guide walks you through the complete Axis onboarding flow from zero to a li
 
     ```json
     {
-      "success": true,
-      "message": "Payment intent executed successfully",
+      "status": "success",
       "data": {
         "transactionId": "txn_01hq9xkvci0r3u7q3h9c",
         "status": "successful",

@@ -1,7 +1,7 @@
 ---
 title: "GET /api/wallets/user/:userId — list all wallets for a user"
 sidebarTitle: "GET /user/:userId"
-description: "List every wallet belonging to a user. Returns wallet configurations and virtual account details. Useful for populating a wallet management dashboard."
+description: "List every wallet belonging to a user. Returns wallet configurations, virtual account details, and API key prefixes. Useful for populating a wallet management dashboard."
 ---
 
 Return every wallet associated with a given user, ordered by creation date descending. Each
@@ -36,8 +36,8 @@ Authorization: Bearer <session_jwt>
 
 ## Response `200 OK`
 
-Returns an array of wallet objects. Each item has the same shape as a single wallet returned
-by `GET /api/wallets/:walletId`.
+Returns an array of wallet objects, each with the same shape as a single wallet from
+`GET /api/wallets/:walletId` — including nested `virtualAccount` and `apiKeys`.
 
 <ResponseField name="[]" type="object[]">
   Array of wallet objects belonging to the user.
@@ -51,6 +51,12 @@ by `GET /api/wallets/:walletId`.
     </ResponseField>
     <ResponseField name="[].userId" type="string">
       UUID of the owning user.
+    </ResponseField>
+    <ResponseField name="[].businessId" type="string | null">
+      The associated business ID, or `null` if not linked to a business account.
+    </ResponseField>
+    <ResponseField name="[].balance" type="integer">
+      Current wallet balance in kobo.
     </ResponseField>
     <ResponseField name="[].spendLimitPerTx" type="integer">
       Per-transaction spend cap, in kobo.
@@ -70,8 +76,14 @@ by `GET /api/wallets/:walletId`.
     <ResponseField name="[].merchantAllowlist" type="string[]">
       Permitted merchant names. Empty array when `useAllowlist` is `false`.
     </ResponseField>
+    <ResponseField name="[].status" type="string">
+      Wallet lifecycle status (e.g. `"ACTIVE"`).
+    </ResponseField>
     <ResponseField name="[].createdAt" type="string">
       ISO 8601 timestamp of wallet creation.
+    </ResponseField>
+    <ResponseField name="[].updatedAt" type="string">
+      ISO 8601 timestamp of the most recent update.
     </ResponseField>
     <ResponseField name="[].virtualAccount" type="object">
       Virtual bank account linked to this wallet.
@@ -80,29 +92,35 @@ by `GET /api/wallets/:walletId`.
         <ResponseField name="[].virtualAccount.id" type="string">
           Virtual account UUID.
         </ResponseField>
+        <ResponseField name="[].virtualAccount.walletId" type="string">
+          The wallet this virtual account is linked to.
+        </ResponseField>
         <ResponseField name="[].virtualAccount.accountNumber" type="string">
           10-digit Nigerian bank account number.
-        </ResponseField>
-        <ResponseField name="[].virtualAccount.bankName" type="string">
-          Issuing bank name.
         </ResponseField>
         <ResponseField name="[].virtualAccount.accountName" type="string">
           Account name as displayed on transfers.
         </ResponseField>
-        <ResponseField name="[].virtualAccount.balance" type="integer">
-          Current balance, in kobo.
+        <ResponseField name="[].virtualAccount.bankName" type="string">
+          Issuing bank name.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.providerRef" type="string">
+          Provider-assigned reference for this virtual account.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.createdAt" type="string">
+          ISO 8601 timestamp of virtual account creation.
         </ResponseField>
       </Expandable>
     </ResponseField>
     <ResponseField name="[].apiKeys" type="object[]">
-      API keys for this wallet. Only `prefix` is returned, never `fullKey`.
+      API keys for this wallet. Only the key prefix is returned, never `fullKey`.
 
       <Expandable title="apiKey fields">
         <ResponseField name="[].apiKeys[].id" type="string">
           API key UUID.
         </ResponseField>
-        <ResponseField name="[].apiKeys[].prefix" type="string">
-          First 8 characters of the key.
+        <ResponseField name="[].apiKeys[].keyPrefix" type="string">
+          The prefix characters of the key, safe to display for identification.
         </ResponseField>
         <ResponseField name="[].apiKeys[].createdAt" type="string">
           ISO 8601 timestamp of key issuance.
@@ -120,24 +138,30 @@ by `GET /api/wallets/:walletId`.
     "id": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
     "name": "Procurement Agent — Q3 2025",
     "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "businessId": null,
+    "balance": 1250000,
     "spendLimitPerTx": 500000,
-    "spendLimitPeriod": 5000000,
+    "spendLimitPeriod": 2000000,
     "periodWindowDays": 30,
-    "expiry": "2026-01-31T23:59:59Z",
+    "expiry": "2027-01-01T00:00:00.000Z",
     "useAllowlist": true,
     "merchantAllowlist": ["AWS", "Vercel", "Stripe"],
+    "status": "ACTIVE",
     "createdAt": "2025-07-15T09:41:02Z",
+    "updatedAt": "2025-07-15T09:41:02Z",
     "virtualAccount": {
-      "id": "vac_11223344-5566-7788-99aa-bbccddeeff00",
-      "accountNumber": "0123456789",
-      "bankName": "Wema Bank",
-      "accountName": "AXIS/PROCUREMENT-AGENT-Q3",
-      "balance": 1250000
+      "id": "va-uuid",
+      "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+      "accountNumber": "9876543210",
+      "accountName": "Procurement Agent — Q3 2025",
+      "bankName": "Providus Bank",
+      "providerRef": "mock-ref-abc123",
+      "createdAt": "2025-07-15T09:41:02Z"
     },
     "apiKeys": [
       {
         "id": "key_aabbccdd-eeff-0011-2233-445566778899",
-        "prefix": "ax_live_",
+        "keyPrefix": "ax_live_9f2a3b",
         "createdAt": "2025-07-15T09:41:02Z"
       }
     ]
@@ -146,24 +170,30 @@ by `GET /api/wallets/:walletId`.
     "id": "wlt_c1d2e3f4-a5b6-4789-0cde-f12345678901",
     "name": "Travel Booking Agent",
     "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "businessId": null,
+    "balance": 3500000,
     "spendLimitPerTx": 1000000,
     "spendLimitPeriod": 10000000,
     "periodWindowDays": 30,
-    "expiry": "2025-12-31T23:59:59Z",
+    "expiry": "2027-12-31T23:59:59Z",
     "useAllowlist": false,
     "merchantAllowlist": [],
+    "status": "ACTIVE",
     "createdAt": "2025-06-01T14:22:10Z",
+    "updatedAt": "2025-06-01T14:22:10Z",
     "virtualAccount": {
-      "id": "vac_aabb1122-ccdd-3344-eeff-556677889900",
+      "id": "va-uuid-2",
+      "walletId": "wlt_c1d2e3f4-a5b6-4789-0cde-f12345678901",
       "accountNumber": "0987654321",
-      "bankName": "Wema Bank",
-      "accountName": "AXIS/TRAVEL-BOOKING-AGENT",
-      "balance": 3500000
+      "accountName": "Travel Booking Agent",
+      "bankName": "Providus Bank",
+      "providerRef": "mock-ref-def456",
+      "createdAt": "2025-06-01T14:22:10Z"
     },
     "apiKeys": [
       {
         "id": "key_11223344-aabb-ccdd-eeff-001122334455",
-        "prefix": "ax_live_",
+        "keyPrefix": "ax_live_7c1e2d",
         "createdAt": "2025-06-01T14:22:10Z"
       }
     ]

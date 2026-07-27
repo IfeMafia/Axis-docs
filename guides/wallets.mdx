@@ -1,7 +1,7 @@
 ---
-title: "Create and manage Axis wallets for your AI agents"
+title: "How to create and manage Axis wallets for your AI agents"
 sidebarTitle: "Wallets"
-description: "A wallet is a scoped spending account tied to one AI agent. Set per-transaction limits, period caps, expiry, and optional merchant allowlists at creation time."
+description: "A wallet is a scoped spending account for one AI agent. Set per-transaction limits, period caps, expiry, and optional merchant allowlists at creation time."
 ---
 
 A **Wallet** is the core primitive in Axis. Every AI agent you deploy gets its own wallet — a scoped spending account that constrains exactly how much the agent can spend, over what time window, with which merchants, and until when. You define all of these rules at creation time. **Wallet rules cannot be changed after creation**, so configure them carefully before issuing the wallet to an agent.
@@ -14,6 +14,8 @@ A **Wallet** is the core primitive in Axis. Every AI agent you deploy gets its o
 
 ## Create a wallet
 
+Send a `POST` request to `/api/wallets` with the configuration for your new agent wallet. The response includes the wallet record, a virtual bank account for funding, and a one-time API key for the agent to use.
+
 ```http
 POST /api/wallets
 ```
@@ -22,12 +24,12 @@ POST /api/wallets
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | ✅ | Human-readable label for this wallet, e.g. `"Purchasing Agent v1"`. |
+| `name` | string | ✅ | Human-readable label for this wallet, e.g. `"Purchasing Agent v1"`. 1–100 characters. |
 | `userId` | string | ✅ | The user ID returned during signup. Links the wallet to the owning user account. |
-| `spendLimitPerTx` | integer | ✅ | Maximum spend allowed in a single transaction, **in kobo**. Must be ≤ `spendLimitPeriod`. |
-| `spendLimitPeriod` | integer | ✅ | Maximum cumulative spend within the rolling period window, **in kobo**. |
-| `periodWindowDays` | integer | ✅ | Length of the rolling spend window in days. Defaults to `30`. |
-| `expiry` | string | ✅ | ISO 8601 datetime at which the wallet becomes inactive, e.g. `"2027-01-01T00:00:00.000Z"`. Must be a future timestamp. |
+| `spendLimitPerTx` | integer | ✅ | Maximum spend allowed in a single transaction, **in kobo**. Must be positive and ≤ `spendLimitPeriod`. |
+| `spendLimitPeriod` | integer | ✅ | Maximum cumulative spend within the rolling period window, **in kobo**. Must be positive. |
+| `periodWindowDays` | integer | ✅ | Length of the rolling spend window in days. Defaults to `30`. Must be positive. |
+| `expiry` | string | — | ISO 8601 datetime at which the wallet becomes inactive, e.g. `"2027-01-01T00:00:00.000Z"`. Must be a future timestamp. |
 | `useAllowlist` | boolean | — | When `true`, the wallet can only make payments to merchants in `merchantAllowlist`. Defaults to `false`. |
 | `merchantAllowlist` | string[] | Conditional | Required when `useAllowlist` is `true`. List of merchant names the agent is permitted to pay. Must contain at least one entry. |
 
@@ -36,7 +38,7 @@ POST /api/wallets
 Keep these constraints in mind when building your wallet creation form:
 
 - `spendLimitPerTx` must be **less than or equal to** `spendLimitPeriod`.
-- `expiry` must be a **future** datetime. Submitting a past or present timestamp will be rejected.
+- If `expiry` is provided, it must be a **future** datetime. Submitting a past or present timestamp will be rejected.
 - If `useAllowlist` is `true`, `merchantAllowlist` must contain **at least one** merchant name.
 
 ### Example request
@@ -46,44 +48,46 @@ Keep these constraints in mind when building your wallet creation form:
   "name": "Purchasing Agent v1",
   "userId": "user_2xKj9mNpQrT4vW8",
   "spendLimitPerTx": 500000,
-  "spendLimitPeriod": 5000000,
+  "spendLimitPeriod": 2000000,
   "periodWindowDays": 30,
   "expiry": "2027-01-01T00:00:00.000Z",
-  "useAllowlist": true,
-  "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"]
+  "useAllowlist": false
 }
 ```
 
 ### Example response
 
+The response body wraps three objects: the wallet record, a virtual bank account for funding, and a one-time API key.
+
 ```json title="201 Created"
 {
-  "status": "success",
+  "success": true,
   "data": {
     "wallet": {
-      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "id": "uuid",
       "name": "Purchasing Agent v1",
       "userId": "user_2xKj9mNpQrT4vW8",
-      "status": "ACTIVE",
-      "spendLimitPerTx": 500000,
-      "spendLimitPeriod": 5000000,
-      "periodWindowDays": 30,
       "balance": 0,
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 2000000,
+      "periodWindowDays": 30,
+      "useAllowlist": false,
       "expiry": "2027-01-01T00:00:00.000Z",
-      "useAllowlist": true,
-      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "status": "ACTIVE",
       "createdAt": "2026-07-21T09:00:00.000Z"
     },
     "virtualAccount": {
-      "accountNumber": "0123456789",
-      "accountName": "AXIS / PURCHASING AGENT V1",
-      "bankName": "Wema Bank",
-      "providerRef": "va_ref_7hXnM2pQkL"
+      "id": "uuid",
+      "walletId": "uuid",
+      "accountNumber": "9876543210",
+      "accountName": "Purchasing Agent v1",
+      "bankName": "Providus Bank",
+      "providerRef": "mock-ref-abc"
     },
     "apiKey": {
-      "id": "key_01J9XKQ4ABCDE12345",
-      "keyPrefix": "ax_live_aBcD",
-      "fullKey": "ax_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+      "id": "uuid",
+      "keyPrefix": "ax_live_9f2a3b",
+      "fullKey": "ax_live_9f2a3b...",
       "createdAt": "2026-07-21T09:00:00.000Z"
     }
   }
@@ -104,42 +108,43 @@ The response contains three nested objects:
 
 ## Retrieve a wallet
 
+Fetches the full wallet record, its linked virtual account, and a list of its API keys (prefixes only — no `fullKey`).
+
 ```http
 GET /api/wallets/:walletId
 ```
-
-Fetches the full wallet record, its linked virtual account, and a list of its API keys (prefixes only — no `fullKey`).
 
 ### Example response
 
 ```json title="200 OK"
 {
-  "status": "success",
+  "success": true,
   "data": {
     "wallet": {
-      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "id": "uuid",
       "name": "Purchasing Agent v1",
       "userId": "user_2xKj9mNpQrT4vW8",
       "status": "ACTIVE",
       "spendLimitPerTx": 500000,
-      "spendLimitPeriod": 5000000,
+      "spendLimitPeriod": 2000000,
       "periodWindowDays": 30,
       "balance": 120000,
       "expiry": "2027-01-01T00:00:00.000Z",
-      "useAllowlist": true,
-      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "useAllowlist": false,
       "createdAt": "2026-07-21T09:00:00.000Z"
     },
     "virtualAccount": {
-      "accountNumber": "0123456789",
-      "accountName": "AXIS / PURCHASING AGENT V1",
-      "bankName": "Wema Bank",
-      "providerRef": "va_ref_7hXnM2pQkL"
+      "id": "uuid",
+      "walletId": "uuid",
+      "accountNumber": "9876543210",
+      "accountName": "Purchasing Agent v1",
+      "bankName": "Providus Bank",
+      "providerRef": "mock-ref-abc"
     },
     "apiKeys": [
       {
-        "id": "key_01J9XKQ4ABCDE12345",
-        "keyPrefix": "ax_live_aBcD",
+        "id": "uuid",
+        "keyPrefix": "ax_live_9f2a3b",
         "createdAt": "2026-07-21T09:00:00.000Z"
       }
     ]
@@ -153,34 +158,33 @@ Note that `apiKeys` is an array — a wallet may have multiple keys (e.g. after 
 
 ## List wallets for a user
 
+Returns all wallets associated with a given user ID.
+
 ```http
 GET /api/wallets/user/:userId
 ```
-
-Returns all wallets associated with a given user ID.
 
 ### Example response
 
 ```json title="200 OK"
 {
-  "status": "success",
+  "success": true,
   "data": [
     {
-      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "id": "uuid",
       "name": "Purchasing Agent v1",
       "userId": "user_2xKj9mNpQrT4vW8",
       "status": "ACTIVE",
       "spendLimitPerTx": 500000,
-      "spendLimitPeriod": 5000000,
+      "spendLimitPeriod": 2000000,
       "periodWindowDays": 30,
       "balance": 120000,
       "expiry": "2027-01-01T00:00:00.000Z",
-      "useAllowlist": true,
-      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "useAllowlist": false,
       "createdAt": "2026-07-21T09:00:00.000Z"
     },
     {
-      "id": "wlt_02K0YLR4NAZBQDOM8U95GSEFH3",
+      "id": "uuid-2",
       "name": "Travel Booking Agent",
       "userId": "user_2xKj9mNpQrT4vW8",
       "status": "INACTIVE",
@@ -190,7 +194,6 @@ Returns all wallets associated with a given user ID.
       "balance": 0,
       "expiry": "2026-12-31T23:59:59.000Z",
       "useAllowlist": false,
-      "merchantAllowlist": [],
       "createdAt": "2026-07-18T14:30:00.000Z"
     }
   ]
@@ -206,7 +209,7 @@ Every wallet has a `status` field that reflects its current state:
 | Status | Meaning |
 |---|---|
 | `ACTIVE` | The wallet is operational. The agent can initiate payment intents up to its configured limits. |
-| `INACTIVE` | The wallet has been manually deactivated or its balance has been zeroed. Payment attempts will be declined. |
+| `INACTIVE` | The wallet has been manually deactivated. Payment attempts will be declined. |
 | `EXPIRED` | The wallet's `expiry` datetime has passed. It is permanently inactive and cannot be reactivated. Create a new wallet to replace it. |
 
 ---
@@ -224,12 +227,14 @@ interface CreateWalletPayload {
   spendLimitPerTx: number;
   spendLimitPeriod: number;
   periodWindowDays: number;
-  expiry: string;
+  expiry?: string;
   useAllowlist: boolean;
   merchantAllowlist?: string[];
 }
 
 interface VirtualAccount {
+  id: string;
+  walletId: string;
   accountNumber: string;
   accountName: string;
   bankName: string;
@@ -252,9 +257,8 @@ interface Wallet {
   spendLimitPeriod: number;
   periodWindowDays: number;
   balance: number;
-  expiry: string;
+  expiry?: string;
   useAllowlist: boolean;
-  merchantAllowlist: string[];
   createdAt: string;
 }
 
@@ -281,7 +285,7 @@ export function useCreateWallet(apiBaseUrl = "/api"): UseCreateWalletReturn {
     if (payload.spendLimitPerTx > payload.spendLimitPeriod) {
       throw new Error("spendLimitPerTx must be ≤ spendLimitPeriod");
     }
-    if (new Date(payload.expiry) <= new Date()) {
+    if (payload.expiry && new Date(payload.expiry) <= new Date()) {
       throw new Error("expiry must be a future datetime");
     }
     if (payload.useAllowlist && !payload.merchantAllowlist?.length) {
@@ -360,12 +364,11 @@ export function CreateWalletForm({ userId }: { userId: string }) {
     const wallet = await createWallet({
       name: "Purchasing Agent v1",
       userId,
-      spendLimitPerTx: 500_000,   // ₦5,000 in kobo
-      spendLimitPeriod: 5_000_000, // ₦50,000 in kobo
+      spendLimitPerTx: 500_000,    // ₦5,000 in kobo
+      spendLimitPeriod: 2_000_000, // ₦20,000 in kobo
       periodWindowDays: 30,
       expiry: "2027-01-01T00:00:00.000Z",
-      useAllowlist: true,
-      merchantAllowlist: ["Shoprite", "Jumia"],
+      useAllowlist: false,
     });
 
     console.log("Wallet created:", wallet.wallet.id);
@@ -383,4 +386,3 @@ export function CreateWalletForm({ userId }: { userId: string }) {
   );
 }
 ```
-

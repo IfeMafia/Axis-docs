@@ -1,23 +1,21 @@
 ---
-title: "Send payments with Axis payment intents"
+title: "Authorize and send payments with Axis payment intents"
 sidebarTitle: "Payment Intents"
-description: "POST /api/payment-intent to debit a wallet and settle to a recipient. The authorization engine checks limits, expiry, allowlist, and balance before any money moves."
+description: "POST /api/payment-intent to debit a wallet and settle funds to a bank account. Axis checks limits, expiry, allowlist, and balance before any money moves."
 ---
 
 A **Payment Intent** is the primary spending action in Axis. Your agent calls this endpoint with the amount and recipient details — Axis runs its authorization engine and either **approves** (debits the wallet, queues settlement) or **blocks** (records the attempt for audit, returns a `403`). No money moves until every authorization check passes.
 
 ## Authorization checks
 
-Axis evaluates these checks in order. All must pass before a payment is approved.
+Axis evaluates these checks in strict order. The first check that fails blocks the payment immediately — the remaining checks are not evaluated.
 
-1. Wallet status is `ACTIVE`
-2. Wallet has not expired (`expiresAt` is in the future, or not set)
-3. `amount` ≤ wallet's per-transaction limit
-4. Cumulative spend in the rolling period window + `amount` ≤ period limit
-5. If the wallet uses an allowlist: `merchantName` must appear in the allowlist
-6. Wallet balance ≥ `amount`
-
-If any check fails, the payment is blocked immediately and the remaining checks are not evaluated.
+1. Wallet `status` must be `active` — inactive wallets cannot make payments
+2. Current time must be before `wallet.expiry` — expired wallets are permanently blocked
+3. `amount` must not exceed the wallet's `spendLimitPerTx` — per-transaction cap
+4. `totalSpent` in the current rolling window + `amount` must not exceed `spendLimitPeriod` — period cap using the `periodWindowDays` rolling window
+5. If `useAllowlist` is `true`: `merchantName` must appear in the wallet's merchant allowlist
+6. `amount` must not exceed the wallet's current `balance` — insufficient funds check
 
 ## POST /api/payment-intent
 
@@ -35,6 +33,8 @@ Requires an `x-api-key` header. See [API key authentication](/guides/api-key-aut
 
 ### Approved response — `200 OK`
 
+When every authorization check passes, Axis debits the wallet and returns the transaction record alongside a settlement reference.
+
 ```json
 // Request
 {
@@ -42,7 +42,7 @@ Requires an `x-api-key` header. See [API key authentication](/guides/api-key-aut
   "merchantName": "Jumia Nigeria",
   "recipientAccountNo": "0123456789",
   "recipientBankCode": "058",
-  "reason": "Order #ORD-9921 payment"
+  "reason": "Monthly subscription"
 }
 
 // Response
@@ -57,16 +57,20 @@ Requires an `x-api-key` header. See [API key authentication](/guides/api-key-aut
       "recipientAccountNo": "0123456789",
       "recipientBankCode": "058",
       "decision": "approved",
+      "reason": "Monthly subscription",
+      "blockReason": null,
       "createdAt": "2026-07-21T10:00:00.000Z"
     },
     "settlement": {
-      "reference": "mock-ref-abc123"
+      "reference": "mock-settle-abc123"
     }
   }
 }
 ```
 
 ### Blocked response — `403 Forbidden`
+
+When a check fails, Axis returns a structured error with a machine-readable `errorCode`. The transaction is still recorded with `decision: "blocked"` for audit purposes.
 
 ```json
 {
@@ -78,11 +82,20 @@ Requires an `x-api-key` header. See [API key authentication](/guides/api-key-aut
 }
 ```
 
-Common `errorCode` values include `WALLET_INACTIVE`, `WALLET_EXPIRED`, `SPEND_LIMIT_PER_TX_EXCEEDED`, `SPEND_LIMIT_PERIOD_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, and `INSUFFICIENT_BALANCE`.
+All possible `errorCode` values, in the order the checks are evaluated:
+
+| Error code | Failing check |
+|---|---|
+| `WALLET_INACTIVE` | Wallet status is not active |
+| `WALLET_EXPIRED` | Wallet has passed its expiry date |
+| `SPEND_LIMIT_PER_TX_EXCEEDED` | Amount exceeds the per-transaction cap |
+| `SPEND_LIMIT_PER_PERIOD_EXCEEDED` | Cumulative spend would exceed the period limit |
+| `MERCHANT_NOT_ALLOWED` | Merchant is not in the wallet's allowlist |
+| `INSUFFICIENT_FUNDS` | Wallet balance is too low to cover the amount |
 
 ## Blocked transactions are still recorded
 
-A blocked attempt is never silently discarded. Axis creates a `Transaction` record with `decision: "blocked"` and a `blockReason` field explaining which check failed. This is intentional — the audit trail is complete regardless of outcome, so you can always inspect why a payment was denied.
+A blocked attempt is never silently discarded. Axis creates a transaction record with `decision: "blocked"` and a `blockReason` field explaining which check failed. This is intentional — the audit trail is complete regardless of outcome, so you can always inspect why a payment was denied.
 
 ## TypeScript example — calling from an AI agent tool
 
@@ -150,7 +163,7 @@ const result = await sendPayment(
     merchantName: "Jumia Nigeria",
     recipientAccountNo: "0123456789",
     recipientBankCode: "058",
-    reason: "Order #ORD-9921 payment",
+    reason: "Monthly subscription",
   },
   process.env.AXIS_API_KEY!
 );

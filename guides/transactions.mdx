@@ -1,5 +1,5 @@
 ---
-title: "Fetch and display wallet transaction history"
+title: "Fetch and display paginated wallet transaction history"
 sidebarTitle: "Transactions"
 description: "Retrieve paginated transaction records for any wallet — both approved and blocked attempts — to display in your dashboard or agent activity log."
 ---
@@ -60,6 +60,8 @@ Returns the most recent transactions for a wallet. Use the `limit` query paramet
 | Parameter | Type   | Default | Description                              |
 | --------- | ------ | ------- | ---------------------------------------- |
 | `limit`   | number | `20`    | Maximum number of transactions to return |
+
+Each record from this endpoint is a compact summary containing only: `amount`, `merchant`, `decision`, `reason`, and `createdAt`. Note that the merchant field is named `merchant` here — not `merchantName`. For the full transaction record including all fields, use `GET /api/wallets/:walletId/transactions`.
 
 ## Transaction fields
 

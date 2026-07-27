@@ -1,7 +1,7 @@
 ---
-title: "GET /api/wallets/:walletId/transactions — paginated transaction history"
+title: "GET /api/wallets/:walletId/transactions — transaction history"
 sidebarTitle: "GET /transactions"
-description: "Fetch paginated transaction records for a wallet, sorted newest first. Includes both approved and blocked attempts with decision and blockReason fields."
+description: "Fetch paginated transaction records for a wallet, sorted newest first. Includes both approved and blocked attempts with decision reason fields."
 ---
 
 Retrieve the full transaction history for a wallet, paginated and sorted newest-first. Every
@@ -41,12 +41,19 @@ Authorization: Bearer <session_jwt>
 </ParamField>
 
 <ParamField query="pageSize" type="integer" default="10">
-  The number of records to return per page. Maximum value is `100`.
+  The number of records to return per page.
 </ParamField>
 
 ---
 
 ## Response `200 OK`
+
+The response envelope contains `success: true`, a `data` array of transaction records, and a
+`pagination` object with totals.
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
 
 <ResponseField name="data" type="object[]">
   Array of transaction records for the requested page, sorted newest-first.
@@ -61,33 +68,41 @@ Authorization: Bearer <session_jwt>
     <ResponseField name="data[].amount" type="integer">
       Transaction amount in **kobo**.
     </ResponseField>
-    <ResponseField name="data[].currency" type="string">
-      ISO 4217 currency code. Currently always `"NGN"`.
+    <ResponseField name="data[].merchant" type="string">
+      Merchant identifier at the point of authorisation.
     </ResponseField>
     <ResponseField name="data[].merchantName" type="string">
-      Name of the merchant at the point of authorisation.
+      Human-readable merchant name as reported by the payment terminal.
     </ResponseField>
-    <ResponseField name="data[].merchantCategory" type="string">
-      Merchant category code (MCC) description, when available.
+    <ResponseField name="data[].recipientAccountNo" type="string">
+      Recipient bank account number for this transaction.
+    </ResponseField>
+    <ResponseField name="data[].recipientBankCode" type="string">
+      Bank code for the recipient account.
     </ResponseField>
     <ResponseField name="data[].decision" type="string">
       Authorisation outcome. One of:
       - `"approved"` — the transaction was approved and funds were reserved.
       - `"blocked"` — the transaction was rejected by a spend control or allowlist rule.
     </ResponseField>
+    <ResponseField name="data[].reason" type="string | null">
+      Human-readable explanation of the decision outcome. `null` for approved transactions
+      with no additional context.
+    </ResponseField>
     <ResponseField name="data[].blockReason" type="string | null">
-      Human-readable explanation of why the transaction was blocked. `null` for approved
+      Structured reason code for why the transaction was blocked. `null` for approved
       transactions. Possible values include:
       - `"exceeds_per_tx_limit"` — amount exceeded `spendLimitPerTx`.
       - `"exceeds_period_limit"` — would exceed `spendLimitPeriod` for the current window.
       - `"merchant_not_in_allowlist"` — merchant is not in `merchantAllowlist`.
       - `"wallet_expired"` — the wallet's `expiry` has passed.
     </ResponseField>
-    <ResponseField name="data[].reference" type="string">
-      Unique payment reference string. Useful for reconciliation.
-    </ResponseField>
     <ResponseField name="data[].createdAt" type="string">
       ISO 8601 timestamp of the authorisation attempt.
+    </ResponseField>
+    <ResponseField name="data[].auditEvents" type="object[]">
+      Array of audit event records associated with this transaction, for compliance and
+      debugging purposes.
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -115,36 +130,41 @@ Authorization: Bearer <session_jwt>
 
 ```json
 {
+  "success": true,
   "data": [
     {
       "id": "txn_d4e5f6a7-b8c9-4012-8def-012345678901",
       "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
       "amount": 345000,
-      "currency": "NGN",
+      "merchant": "aws",
       "merchantName": "AWS",
-      "merchantCategory": "Computer Programming, Data Processing",
+      "recipientAccountNo": "0123456789",
+      "recipientBankCode": "058",
       "decision": "approved",
+      "reason": null,
       "blockReason": null,
-      "reference": "AXS-20250715-0041",
-      "createdAt": "2025-07-15T11:03:44Z"
+      "createdAt": "2025-07-15T11:03:44Z",
+      "auditEvents": []
     },
     {
       "id": "txn_e5f6a7b8-c9d0-4123-9ef0-123456789012",
       "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
       "amount": 750000,
-      "currency": "NGN",
+      "merchant": "rackspace",
       "merchantName": "Rackspace",
-      "merchantCategory": "Computer Programming, Data Processing",
+      "recipientAccountNo": "0987654321",
+      "recipientBankCode": "011",
       "decision": "blocked",
+      "reason": "Merchant not in allowlist",
       "blockReason": "merchant_not_in_allowlist",
-      "reference": "AXS-20250715-0039",
-      "createdAt": "2025-07-15T10:58:17Z"
+      "createdAt": "2025-07-15T10:58:17Z",
+      "auditEvents": []
     }
   ],
   "pagination": {
     "page": 1,
     "pageSize": 10,
-    "totalCount": 47,
+    "totalCount": 42,
     "totalPages": 5
   }
 }

@@ -1,10 +1,14 @@
 ---
-title: "Register your business on Axis"
+title: "Register your business entity with the Axis payment API"
 sidebarTitle: "Onboarding"
-description: "After signing up, register your business entity to unlock wallet creation and full API access. Takes a single POST request."
+description: "Register a business entity to unlock wallet creation and full API access. One POST request is all it takes — or skip it if you signed up as a business."
 ---
 
 After creating a user account, the next step is to register a business entity with Axis. Wallets belong to a business — not directly to a user — so this registration step is required before you can create any wallets or issue API keys. You only need to do this once per business.
+
+<Note>
+  **Business accounts created via signup skip this step.** When you pass `accountType: "business"` to `POST /v1/auth/signup`, Axis automatically creates the business entity for you. The `businessId` is returned in the signup response at `data.user.businessId`. You can still call `POST /v1/onboarding` afterwards to update business details, but it is not required.
+</Note>
 
 <Note>
   This endpoint is authenticated with a **session JWT**, not an API key. Make sure you have completed the sign-in flow and are forwarding the session cookie (or `Authorization` header) before calling this endpoint. See [Session authentication](/guides/session-auth) for details.
@@ -58,7 +62,7 @@ Both paths point to the same handler. Use whichever base URL your environment is
 
 ## Store the `businessId`
 
-The `businessId` returned in the response is required when creating wallets. Store it in your application state as soon as you receive it — you will pass it to every wallet creation request.
+The `businessId` returned in the response is required when creating wallets. Store it in your application state as soon as you receive it — you will pass it to every wallet creation request. If you signed up with `accountType: "business"`, your `businessId` was already returned in the signup response at `data.user.businessId`; there is no need to call this endpoint again just to retrieve it.
 
 Here is a complete TypeScript example that calls the onboarding endpoint from a React app and persists the `businessId`:
 
@@ -86,6 +90,8 @@ interface OnboardingResponse {
  * Registers a business entity on Axis.
  * Must be called after the user has signed in — the session cookie
  * is forwarded automatically when `credentials: "include"` is set.
+ *
+ * Skip this call if you already have a businessId from a business-type signup.
  */
 export async function registerBusiness(
   payload: OnboardingPayload
@@ -164,4 +170,3 @@ export function OnboardingForm() {
   );
 }
 ```
-

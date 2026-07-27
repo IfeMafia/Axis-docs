@@ -47,7 +47,7 @@ None required. This is a public endpoint.
 
 ## Response — 201 Created
 
-A successful request returns HTTP `201` with a JSON body containing a JWT session token and the newly created user record.
+A successful request returns HTTP `201` with a JSON body containing a JWT session token and the newly created user record. Note that `token` lives directly inside `data`, alongside `user` — it is not nested inside `data.user`.
 
 <ResponseField name="status" type="string">
   Always `"success"` for a successful response.
@@ -77,8 +77,8 @@ A successful request returns HTTP `201` with a JSON body containing a JWT sessio
           The account type: `"developer"` or `"business"`.
         </ResponseField>
 
-        <ResponseField name="data.user.businessName" type="string">
-          Present when `accountType` is `"business"`.
+        <ResponseField name="data.user.businessId" type="string | null">
+          UUID of the auto-created business entity when `accountType` is `"business"`. `null` for developer accounts.
         </ResponseField>
 
         <ResponseField name="data.user.createdAt" type="string">
@@ -98,7 +98,7 @@ A successful request returns HTTP `201` with a JSON body containing a JWT sessio
       "id": "e9b1f203-4871-4e0e-a6cd-1d76dbc163ff",
       "email": "dev@acme.io",
       "accountType": "business",
-      "businessName": "Acme Corp",
+      "businessId": "b1a2c3d4-e5f6-7890-abcd-ef1234567890",
       "createdAt": "2026-07-21T09:00:00.000Z"
     }
   }
@@ -138,5 +138,16 @@ Returned when one or more request fields fail validation. The `errors` array con
       "message": "Invalid enum value. Expected 'developer' | 'business', received 'admin'"
     }
   ]
+}
+```
+
+### 409 — Email Already Registered
+
+Returned when an account with the supplied email address already exists. Use this response to prompt the user to log in instead.
+
+```json
+{
+  "status": "fail",
+  "message": "User with this email already exists"
 }
 ```

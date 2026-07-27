@@ -1,10 +1,10 @@
 ---
-title: "Get live wallet statistics and spending summary"
+title: "Get live wallet statistics, balance, and spend limits"
 sidebarTitle: "Wallet Stats"
-description: "The stats endpoint returns a wallet's current balance, approved transaction count, total spend, and recent activity — ideal for dashboard cards."
+description: "The stats endpoint returns a wallet's current balance, per-transaction spend limit, period spend limit, amount spent this period, and remaining allowance."
 ---
 
-The stats endpoint gives you a **pre-aggregated summary** of a wallet's activity — perfect for building a dashboard overview card without needing to aggregate transactions yourself. Rather than fetching pages of transactions and summing them client-side, a single request to the stats endpoint returns everything you need to render a spend overview.
+The stats endpoint gives you a **pre-aggregated spend summary** for a wallet — perfect for building a dashboard overview card without aggregating transactions yourself. A single request returns the current balance, configured spend limits, and how much of the period allowance has already been consumed.
 
 ## Endpoints
 
@@ -16,30 +16,27 @@ Returns aggregated statistics for a single wallet. No query parameters required.
 
 ```json
 {
-  "success": true,
-  "data": {
-    "walletId": "a1b2c3d4-0000-4e5a-9abc-000000000000",
-    "balance": 4500000,
-    "approvedTransactionCount": 18,
-    "totalAmountSpent": 9000000,
-    "blockedTransactionCount": 3
-  }
+  "balance": 1000000,
+  "spendLimitPerTx": 500000,
+  "spendLimitPeriod": 2000000,
+  "spentThisPeriod": 500000,
+  "remainingAllowance": 1500000
 }
 ```
 
 **Stats fields**
 
-| Field                      | Type   | Description                                                             |
-| -------------------------- | ------ | ----------------------------------------------------------------------- |
-| `walletId`                 | string | UUID of the wallet                                                      |
-| `balance`                  | number | Current wallet balance in **kobo** — divide by 100 to display in naira |
-| `approvedTransactionCount` | number | Total number of successfully approved transactions                       |
-| `totalAmountSpent`         | number | Cumulative amount spent across all approved transactions, in kobo       |
-| `blockedTransactionCount`  | number | Total number of blocked payment attempts                                |
+| Field                | Type   | Description                                                                        |
+| -------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `balance`            | number | Current wallet balance in **kobo** — divide by 100 to display in naira            |
+| `spendLimitPerTx`    | number | Maximum amount allowed per individual transaction, in kobo                         |
+| `spendLimitPeriod`   | number | Total spend cap for the current period, in kobo                                    |
+| `spentThisPeriod`    | number | Amount already spent in the current period, in kobo                                |
+| `remainingAllowance` | number | Remaining spendable amount in the current period (`spendLimitPeriod - spentThisPeriod`), in kobo |
 
 ### `GET /v1/wallets/:id/transactions`
 
-Returns the most recent transactions for a wallet without pagination. Use the `limit` parameter to control how many records come back.
+Returns the most recent transactions for a wallet. Use the `limit` parameter to control how many records come back.
 
 **Query parameters**
 
@@ -47,27 +44,26 @@ Returns the most recent transactions for a wallet without pagination. Use the `l
 | --------- | ------ | ------- | ---------------------------------------- |
 | `limit`   | number | `20`    | Maximum number of transactions to return |
 
-Pair this with the stats endpoint to populate both the summary card and the recent activity list in a single render cycle.
+Each transaction record includes: `amount`, `merchant`, `decision`, `reason`, and `createdAt`. Pair this with the stats endpoint to populate both the summary card and the recent activity list in a single render cycle.
 
 ## React example: stats dashboard card
 
-The component below fetches wallet stats, converts kobo to naira for display, and renders a spend-vs-limit progress bar alongside transaction counts.
+The component below fetches wallet stats, converts kobo to naira for display, and renders a period-spend progress bar alongside balance and limit information.
 
 ```tsx
 import { useEffect, useState } from "react";
 
 interface WalletStats {
-  walletId: string;
   balance: number;
-  approvedTransactionCount: number;
-  totalAmountSpent: number;
-  blockedTransactionCount: number;
+  spendLimitPerTx: number;
+  spendLimitPeriod: number;
+  spentThisPeriod: number;
+  remainingAllowance: number;
 }
 
 interface WalletStatsCardProps {
   walletId: string;
   apiKey: string;
-  spendLimitKobo: number; // your configured spend limit, for the progress bar
 }
 
 function koboToNaira(kobo: number): string {
@@ -77,11 +73,7 @@ function koboToNaira(kobo: number): string {
   });
 }
 
-export function WalletStatsCard({
-  walletId,
-  apiKey,
-  spendLimitKobo,
-}: WalletStatsCardProps) {
+export function WalletStatsCard({ walletId, apiKey }: WalletStatsCardProps) {
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,8 +84,8 @@ export function WalletStatsCard({
           headers: { Authorization: `Bearer ${apiKey}` },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        setStats(json.data);
+        const json: WalletStats = await res.json();
+        setStats(json);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load stats");
       }
@@ -105,10 +97,9 @@ export function WalletStatsCard({
   if (error)   return <p className="text-red-500">Error: {error}</p>;
   if (!stats)  return <p className="text-gray-400">Loading stats…</p>;
 
-  const spendPercent = Math.min(
-    (stats.totalAmountSpent / spendLimitKobo) * 100,
-    100
-  );
+  const spendPercent = stats.spendLimitPeriod > 0
+    ? Math.min((stats.spentThisPeriod / stats.spendLimitPeriod) * 100, 100)
+    : 0;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
@@ -121,9 +112,9 @@ export function WalletStatsCard({
 
       <div>
         <div className="flex justify-between text-sm text-gray-600 mb-1">
-          <span>Spend</span>
+          <span>Period Spend</span>
           <span>
-            {koboToNaira(stats.totalAmountSpent)} / {koboToNaira(spendLimitKobo)}
+            {koboToNaira(stats.spentThisPeriod)} / {koboToNaira(stats.spendLimitPeriod)}
           </span>
         </div>
         <div className="h-2 w-full rounded-full bg-gray-100">
@@ -135,17 +126,17 @@ export function WalletStatsCard({
       </div>
 
       <div className="grid grid-cols-2 gap-4 pt-2">
-        <div className="rounded-lg bg-green-50 p-3 text-center">
-          <p className="text-2xl font-semibold text-green-700">
-            {stats.approvedTransactionCount}
+        <div className="rounded-lg bg-blue-50 p-3 text-center">
+          <p className="text-2xl font-semibold text-blue-700">
+            {koboToNaira(stats.remainingAllowance)}
           </p>
-          <p className="text-xs text-green-600">Approved</p>
+          <p className="text-xs text-blue-600">Remaining Allowance</p>
         </div>
-        <div className="rounded-lg bg-red-50 p-3 text-center">
-          <p className="text-2xl font-semibold text-red-700">
-            {stats.blockedTransactionCount}
+        <div className="rounded-lg bg-gray-50 p-3 text-center">
+          <p className="text-2xl font-semibold text-gray-700">
+            {koboToNaira(stats.spendLimitPerTx)}
           </p>
-          <p className="text-xs text-red-600">Blocked</p>
+          <p className="text-xs text-gray-600">Per-Tx Limit</p>
         </div>
       </div>
     </div>
@@ -172,8 +163,8 @@ function useWalletStats(walletId: string, apiKey: string, intervalMs = 1500) {
           headers: { Authorization: `Bearer ${apiKey}` },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        setStats(json.data);
+        const json: WalletStats = await res.json();
+        setStats(json);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -193,26 +184,20 @@ function useWalletStats(walletId: string, apiKey: string, intervalMs = 1500) {
 }
 
 // Usage in a component:
-export function LiveStatsCard({ walletId, apiKey, spendLimitKobo }) {
+export function LiveStatsCard({ walletId, apiKey }: { walletId: string; apiKey: string }) {
   const { stats, error } = useWalletStats(walletId, apiKey, 1500);
 
   if (error)  return <p className="text-red-500">Error: {error}</p>;
   if (!stats) return <p className="text-gray-400">Connecting…</p>;
 
-  return (
-    <WalletStatsCard
-      walletId={walletId}
-      apiKey={apiKey}
-      spendLimitKobo={spendLimitKobo}
-    />
-  );
+  return <WalletStatsCard walletId={walletId} apiKey={apiKey} />;
 }
 ```
 
 The hook fetches once immediately, then re-fetches every `intervalMs` milliseconds. The cleanup function returned from `useEffect` cancels the interval when the component unmounts, preventing memory leaks and stale state updates.
 
 <Tip>
-  The stats endpoint gives you the current aggregated balance, but if you need the full
+  The stats endpoint gives you the current aggregated balance and spend figures, but if you need the full
   immutable history of every balance change — top-ups, debits, and refunds — see
   [Query the Axis ledger](/guides/ledger).
 </Tip>

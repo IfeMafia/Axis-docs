@@ -33,16 +33,16 @@ Retrieves audit events. Filter by `transactionId` to fetch all checks for a spec
 
 ### Authorization rule names
 
-The `ruleEvaluated` field will contain one of the following values:
+The `ruleEvaluated` field contains one of the following values, corresponding to each step in the authorization engine:
 
-| Rule name              | What it checks                                                          |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `wallet_active`        | Whether the wallet is active and not suspended                          |
-| `spend_limit_per_tx`   | Whether the transaction amount is within the per-transaction spend limit |
-| `merchant_allowlist`   | Whether the merchant is on the wallet's approved merchant list          |
-| `balance_check`        | Whether the wallet has sufficient balance to cover the transaction      |
-| `daily_spend_limit`    | Whether the transaction would exceed the wallet's daily spend cap       |
-| `policy_check`         | Whether the transaction satisfies any additional agent policy rules     |
+| Rule name                   | What it checks                                                           |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `wallet_active_check`       | Whether the wallet is active and not suspended                           |
+| `expiry_check`              | Whether the wallet or its policy has not expired                         |
+| `per_tx_limit_check`        | Whether the transaction amount is within the per-transaction spend limit  |
+| `period_limit_check`        | Whether the transaction would exceed the wallet's period spend cap       |
+| `merchant_allowlist_check`  | Whether the merchant is on the wallet's approved merchant list           |
+| `balance_check`             | Whether the wallet has sufficient balance to cover the transaction       |
 
 ## Example: audit events for a blocked transaction
 
@@ -55,7 +55,7 @@ The following shows the audit events for a transaction that was blocked because 
     {
       "id": "ae-uuid-0001",
       "transactionId": "tx-uuid-blocked-001",
-      "ruleEvaluated": "wallet_active",
+      "ruleEvaluated": "wallet_active_check",
       "passed": true,
       "detail": null,
       "createdAt": "2026-07-21T14:22:01.000Z"
@@ -63,7 +63,7 @@ The following shows the audit events for a transaction that was blocked because 
     {
       "id": "ae-uuid-0002",
       "transactionId": "tx-uuid-blocked-001",
-      "ruleEvaluated": "spend_limit_per_tx",
+      "ruleEvaluated": "per_tx_limit_check",
       "passed": true,
       "detail": null,
       "createdAt": "2026-07-21T14:22:01.001Z"
@@ -71,7 +71,7 @@ The following shows the audit events for a transaction that was blocked because 
     {
       "id": "ae-uuid-0003",
       "transactionId": "tx-uuid-blocked-001",
-      "ruleEvaluated": "merchant_allowlist",
+      "ruleEvaluated": "merchant_allowlist_check",
       "passed": false,
       "detail": "Merchant 'AliExpress' is not in the wallet's approved merchant list.",
       "createdAt": "2026-07-21T14:22:01.002Z"

@@ -1,5 +1,5 @@
 ---
-title: "Base URL, request format, and error handling"
+title: "Axis API Base URL, Request Format, and Error Handling"
 sidebarTitle: "Base URL & Errors"
 description: "Every Axis API request targets a versioned base URL. Learn the two route namespaces, standard error shape, and how to handle common HTTP status codes."
 ---
@@ -8,9 +8,9 @@ Axis exposes two route namespaces that reflect the natural split between **user-
 
 ## Route namespaces
 
-### `/v1/` — Auth and onboarding
+### `/v1/` — Auth, onboarding, and wallet data
 
-The `/v1/` namespace handles identity: signing users up, issuing session tokens, and bootstrapping their first wallet through the onboarding flow. It also exposes lightweight read endpoints for wallet stats and transaction history that are scoped to the authenticated session.
+The `/v1/` namespace handles identity: signing users up, issuing session tokens, and bootstrapping their first wallet through the onboarding flow. It also exposes read endpoints for wallet stats and transaction history scoped to the authenticated session.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -21,21 +21,17 @@ The `/v1/` namespace handles identity: signing users up, issuing session tokens,
 | `GET` | `/v1/wallets/:id/stats` | Fetch aggregate stats for a wallet |
 | `GET` | `/v1/wallets/:id/transactions` | List transactions scoped to a wallet |
 
-### `/api/` — Wallets, payments, and ledger
+### `/api/` — Wallets and payments
 
-The `/api/` namespace is where agents operate. It handles wallet provisioning, payment intent creation, ledger queries, audit events, and webhook registration. These routes are authenticated with an **API key** rather than a session token.
+The `/api/` namespace is where wallets are provisioned and agents submit payment intents. Wallet CRUD routes require a session token; the payment intent route requires a wallet API key.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/api/onboarding` | Alternative onboarding route (also valid) |
 | `POST` | `/api/wallets` | Provision a new wallet |
 | `GET` | `/api/wallets/:walletId` | Fetch a wallet by ID |
 | `GET` | `/api/wallets/user/:userId` | List all wallets for a user |
-| `GET` | `/api/wallets/:walletId/transactions` | List transactions for a wallet |
-| `GET` | `/api/wallets/:walletId/ledgers` | Fetch ledger entries for a wallet |
 | `POST` | `/api/payment-intent` | Create and authorize a payment intent |
-| `GET` | `/api/ledger` | Query the global ledger |
-| `GET` | `/api/audit-events` | Retrieve audit event log |
-| `POST` | `/api/webhooks` | Register a webhook endpoint |
 
 ---
 
@@ -43,8 +39,8 @@ The `/api/` namespace is where agents operate. It handles wallet provisioning, p
 
 Every request to the Axis API must include a `Content-Type: application/json` header and a JSON body (for `POST` requests). Authenticated routes require one of two credentials:
 
-- **`Authorization: Bearer <token>`** — a session token returned by `POST /v1/auth/login`, used with `/v1/` routes.
-- **`x-api-key: <api-key>`** — a long-lived API key, used with `/api/` routes.
+- **`Authorization: Bearer <token>`** — a session token returned by `POST /v1/auth/login`, used with `/v1/` routes and wallet management routes.
+- **`x-api-key: <api-key>`** — a wallet-scoped API key (`ax_live_` + 48 hex chars), used with `POST /api/payment-intent`.
 
 ```typescript
 const BASE_URL = "https://api.axispayments.ai";
@@ -89,11 +85,11 @@ async function axisRequest<T>(
 
 ## Error response shape
 
-When a request fails, Axis returns a JSON body with a consistent structure. `success` (or `status`) signals the failure, `message` gives a human-readable description, and the optional `details` object provides field-level validation errors — useful for surfacing inline form errors directly in your UI.
+When a request fails, Axis returns a JSON body with a consistent structure. `status` signals the failure, `message` gives a human-readable description, and the optional `details` object provides field-level validation errors — useful for surfacing inline form errors directly in your UI.
 
 ```json
 {
-  "success": false,
+  "status": "fail",
   "message": "invalid request body",
   "details": {
     "amount": ["Must be greater than 0"]
@@ -103,12 +99,12 @@ When a request fails, Axis returns a JSON body with a consistent structure. `suc
 
 | Field | Type | Always present | Description |
 |-------|------|----------------|-------------|
-| `success` | `false` | ✓ | Always `false` on error responses |
+| `status` | `string` | ✓ | `"fail"` or `"error"` on failure responses |
 | `message` | `string` | ✓ | Human-readable description of the failure |
 | `details` | `object` | ✗ | Field-keyed validation errors (400 responses only) |
 
 <Note>
-  Some error responses use `status: 'fail'` instead of `success: false`. Your error handler should treat both shapes as failure cases.
+  Some error responses use `success: false` instead of `status: "fail"`. Your error handler should treat both shapes as failure cases.
 </Note>
 
 ---
@@ -116,7 +112,7 @@ When a request fails, Axis returns a JSON body with a consistent structure. `suc
 ## HTTP status codes
 
 | Status | Meaning | When you'll see it |
-|--------|---------|--------------------|
+|--------|---------|-------------------|
 | `200` | OK | Successful `GET` requests |
 | `201` | Created | `POST` requests that create a new resource |
 | `400` | Bad Request | Missing or invalid fields in the request body |
@@ -153,7 +149,7 @@ The snippet below shows a complete error-handling wrapper built around the reque
 // axis-error.ts
 
 export interface AxisErrorBody {
-  success: false;
+  status: string;
   message: string;
   code?: AxisErrorCode;
   details?: Record<string, string[]>;

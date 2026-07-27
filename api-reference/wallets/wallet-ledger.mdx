@@ -41,12 +41,19 @@ Authorization: Bearer <session_jwt>
 </ParamField>
 
 <ParamField query="pageSize" type="integer" default="10">
-  The number of ledger entries to return per page. Maximum value is `100`.
+  The number of ledger entries to return per page.
 </ParamField>
 
 ---
 
 ## Response `200 OK`
+
+The response envelope contains `success: true`, a `data` array of ledger entries, and a
+`pagination` object with totals.
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
 
 <ResponseField name="data" type="object[]">
   Array of ledger entry objects for the requested page, sorted newest-first.
@@ -76,9 +83,10 @@ Authorization: Bearer <session_jwt>
       The UUID of the associated transaction record, if this entry was produced by a payment
       authorisation or refund. `null` for `topup` entries.
     </ResponseField>
-    <ResponseField name="data[].reference" type="string">
-      A human-readable reference string. For top-ups this is the inbound bank transfer
-      reference; for debits and refunds it mirrors the transaction `reference`.
+    <ResponseField name="data[].reference" type="string | null">
+      A human-readable reference string, or `null` when no reference is available. For top-ups
+      this is typically the inbound bank transfer reference; for debits and refunds it mirrors
+      the transaction reference.
     </ResponseField>
     <ResponseField name="data[].createdAt" type="string">
       ISO 8601 timestamp of when this ledger entry was created.
@@ -109,6 +117,7 @@ Authorization: Bearer <session_jwt>
 
 ```json
 {
+  "success": true,
   "data": [
     {
       "id": "led_f1e2d3c4-b5a6-4789-bcde-f01234567890",

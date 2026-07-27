@@ -1,10 +1,10 @@
 ---
-title: "Authenticate users with session tokens (JWT)"
+title: "Session Token Authentication for the Axis API (JWT)"
 sidebarTitle: "Session Auth"
-description: "Sign up or log in to get a JWT. Include it in the Authorization header to access protected endpoints from your frontend."
+description: "Sign up or log in to receive a 7-day JWT. Include it in the Authorization header to access all protected Axis endpoints from your frontend."
 ---
 
-Session-based authentication is the right choice for any flow where a human is behind the keyboard — account creation, dashboard access, wallet management, and developer onboarding. When you sign up or log in, Axis returns a signed JWT. You store that token client-side and attach it to every subsequent request via the `Authorization` header. Tokens are tied to a user account, not to any individual wallet.
+Session-based authentication is the right choice for any flow where a human is behind the keyboard — account creation, dashboard access, wallet management, and developer onboarding. When you sign up or log in, Axis returns a signed JWT that is valid for **7 days**. You store that token client-side and attach it to every subsequent request via the `Authorization` header. Tokens are tied to a user account, not to any individual wallet.
 
 ---
 
@@ -14,6 +14,8 @@ Session-based authentication is the right choice for any flow where a human is b
 
 Create a new Axis account. The response includes a JWT that you can use immediately — no separate login step required after registration.
 
+When you sign up with `accountType: "business"`, Axis automatically creates a business record and returns the `businessId` in the user object. For `accountType: "developer"`, `businessId` will be `null`.
+
 ### Request body
 
 | Field | Type | Required | Description |
@@ -21,7 +23,6 @@ Create a new Axis account. The response includes a JWT that you can use immediat
 | `email` | string | ✓ | A valid email address |
 | `password` | string | ✓ | Minimum 6 characters |
 | `accountType` | string | ✓ | `"developer"` or `"business"` |
-| `businessName` | string | ✓ if `accountType` is `"business"` | Legal or trading name of the business |
 
 ### Example
 
@@ -42,12 +43,33 @@ Content-Type: application/json
 {
   "status": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
-      "id": "usr_01j9z2k...",
+      "id": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
       "email": "ada@example.com",
-      "accountType": "developer"
-    }
+      "accountType": "developer",
+      "businessId": null,
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+For a `"business"` signup, `businessId` will be populated rather than `null`:
+
+```json
+// Response 201 Created (business account)
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "b9e2d104-3c7f-4a1b-8e5d-2f0c9a4b6e31",
+      "email": "ada@example.com",
+      "accountType": "business",
+      "businessId": "c4f1a823-7d9e-4b2c-8f0a-1e3d5c7b9a2f",
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
@@ -78,12 +100,14 @@ Content-Type: application/json
 {
   "status": "success",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
-      "id": "usr_01j9z2k...",
+      "id": "a3f7c291-8b4e-4d2a-9f1c-0e5b7d3a6c82",
       "email": "ada@example.com",
-      "accountType": "developer"
-    }
+      "accountType": "developer",
+      "businessId": null,
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
@@ -94,7 +118,7 @@ Content-Type: application/json
 
 **`POST /v1/auth/logout`**
 
-Invalidates the current session server-side. No request body is needed.
+Invalidates the current session server-side. No request body is needed — just include your `Authorization` header as usual.
 
 ```json
 // Response 200 OK
@@ -108,12 +132,12 @@ Invalidates the current session server-side. No request body is needed.
 
 ## Using the token
 
-Once you have a token, attach it to every protected request in the `Authorization` header using the `Bearer` scheme.
+Once you have a token, attach it to every protected request in the `Authorization` header using the `Bearer` scheme. Tokens expire after **7 days** — after expiry, the API will return `401 Unauthorized` and you will need to call `POST /v1/auth/login` again.
 
 ```typescript
 const token = localStorage.getItem("axis_token"); // or read from your auth context
 
-const response = await fetch("https://api.axis.so/v1/wallets", {
+const response = await fetch("https://api.axispayments.ai/api/wallets", {
   method: "GET",
   headers: {
     "Content-Type": "application/json",

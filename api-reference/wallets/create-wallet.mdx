@@ -4,7 +4,9 @@ sidebarTitle: "POST /wallets"
 description: "Create a scoped wallet for an AI agent. Sets per-transaction and period spend limits, expiry, and optional merchant allowlist. Returns an API key and virtual account."
 ---
 
-Provision a new wallet for an AI agent. Each wallet is fully isolated — it carries its own virtual bank account, spend controls, and API key. The agent uses that key to authorise payments; your backend never touches the agent's funds directly.
+Provision a new wallet for an AI agent. Each wallet is fully isolated — it carries its own
+virtual bank account, spend controls, and API key. The agent uses that key to authorise
+payments; your backend never touches the agent's funds directly.
 
 > **Canonical path:** `POST /api/wallets`
 > `POST /api/onboarding` redirects to this endpoint — use the canonical path for all new integrations.
@@ -39,6 +41,7 @@ Authorization: Bearer <session_jwt>
 <ParamField body="spendLimitPerTx" type="integer" required>
   Maximum amount the agent may spend in a **single transaction**, denominated in **kobo**
   (100 kobo = ₦1). Requests above this threshold are automatically blocked.
+  Must be a positive integer and **must not exceed `spendLimitPeriod`**.
 </ParamField>
 
 <ParamField body="spendLimitPeriod" type="integer" required>
@@ -62,14 +65,27 @@ Authorization: Bearer <session_jwt>
 </ParamField>
 
 <ParamField body="merchantAllowlist" type="string[]">
-  An array of merchant name strings. **Required when `useAllowlist` is `true`.**
-  Merchant names are matched case-insensitively against the name reported by the payment
-  terminal at authorisation time.
+  An array of merchant name strings. **Required when `useAllowlist` is `true`** (must contain
+  at least one entry). Merchant names are matched case-insensitively against the name reported
+  by the payment terminal at authorisation time.
 
   ```json
   ["Shopify Store", "AWS", "Vercel"]
   ```
 </ParamField>
+
+---
+
+## Cross-field Validation Rules
+
+The following constraints are enforced in addition to individual field validation:
+
+- **`spendLimitPerTx` ≤ `spendLimitPeriod`** — the per-transaction cap cannot exceed the
+  rolling-period cap. A `400` error is returned if this rule is violated.
+- **`merchantAllowlist` required when `useAllowlist` is `true`** — the array must contain at
+  least one merchant name. Omitting it or sending an empty array returns `400`.
+- **`expiry` must be in the future** — the timestamp is validated against the server clock at
+  request time. A past expiry returns `400`.
 
 ---
 
@@ -80,9 +96,9 @@ Authorization: Bearer <session_jwt>
   "name": "Procurement Agent — Q3 2025",
   "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "spendLimitPerTx": 500000,
-  "spendLimitPeriod": 5000000,
+  "spendLimitPeriod": 2000000,
   "periodWindowDays": 30,
-  "expiry": "2026-01-31T23:59:59Z",
+  "expiry": "2027-01-01T00:00:00.000Z",
   "useAllowlist": true,
   "merchantAllowlist": ["AWS", "Vercel", "Stripe"]
 }
@@ -92,80 +108,118 @@ Authorization: Bearer <session_jwt>
 
 ## Response `201 Created`
 
-<ResponseField name="wallet" type="object">
-  The newly created wallet object.
+The response envelope contains `success: true` and a `data` object with three nested objects:
+`wallet`, `virtualAccount`, and `apiKey`.
 
-  <Expandable title="wallet fields">
-    <ResponseField name="wallet.id" type="string">
-      Unique wallet UUID. Use this as `walletId` in all subsequent requests.
-    </ResponseField>
-    <ResponseField name="wallet.name" type="string">
-      The label supplied at creation time.
-    </ResponseField>
-    <ResponseField name="wallet.userId" type="string">
-      The owning user's ID.
-    </ResponseField>
-    <ResponseField name="wallet.spendLimitPerTx" type="integer">
-      Per-transaction spend cap, in kobo.
-    </ResponseField>
-    <ResponseField name="wallet.spendLimitPeriod" type="integer">
-      Rolling-period spend cap, in kobo.
-    </ResponseField>
-    <ResponseField name="wallet.periodWindowDays" type="integer">
-      Length of the rolling window in days.
-    </ResponseField>
-    <ResponseField name="wallet.expiry" type="string">
-      ISO 8601 expiry timestamp.
-    </ResponseField>
-    <ResponseField name="wallet.useAllowlist" type="boolean">
-      Whether merchant-allowlist enforcement is active.
-    </ResponseField>
-    <ResponseField name="wallet.merchantAllowlist" type="string[]">
-      List of permitted merchant names (empty array when `useAllowlist` is `false`).
-    </ResponseField>
-    <ResponseField name="wallet.createdAt" type="string">
-      ISO 8601 timestamp of wallet creation.
-    </ResponseField>
-  </Expandable>
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful creation.
 </ResponseField>
 
-<ResponseField name="virtualAccount" type="object">
-  The virtual bank account automatically provisioned for this wallet.
+<ResponseField name="data" type="object">
+  Container for the created resources.
 
-  <Expandable title="virtualAccount fields">
-    <ResponseField name="virtualAccount.id" type="string">
-      Virtual account UUID.
-    </ResponseField>
-    <ResponseField name="virtualAccount.accountNumber" type="string">
-      10-digit Nigerian bank account number assigned to this wallet.
-    </ResponseField>
-    <ResponseField name="virtualAccount.bankName" type="string">
-      The issuing bank name (e.g. `"Wema Bank"`).
-    </ResponseField>
-    <ResponseField name="virtualAccount.accountName" type="string">
-      Account name as it appears on bank transfers.
-    </ResponseField>
-    <ResponseField name="virtualAccount.balance" type="integer">
-      Current balance in kobo. Will be `0` for a freshly created wallet.
-    </ResponseField>
-  </Expandable>
-</ResponseField>
+  <Expandable title="data fields">
+    <ResponseField name="data.wallet" type="object">
+      The newly created wallet object.
 
-<ResponseField name="apiKey" type="object">
-  Credentials the agent uses to authorise payments.
+      <Expandable title="wallet fields">
+        <ResponseField name="data.wallet.id" type="string">
+          Unique wallet UUID. Use this as `walletId` in all subsequent requests.
+        </ResponseField>
+        <ResponseField name="data.wallet.name" type="string">
+          The label supplied at creation time.
+        </ResponseField>
+        <ResponseField name="data.wallet.userId" type="string">
+          The owning user's ID.
+        </ResponseField>
+        <ResponseField name="data.wallet.businessId" type="string | null">
+          The associated business ID, or `null` if not linked to a business account.
+        </ResponseField>
+        <ResponseField name="data.wallet.balance" type="integer">
+          Current wallet balance in kobo. Always `0` for a freshly created wallet.
+        </ResponseField>
+        <ResponseField name="data.wallet.spendLimitPerTx" type="integer">
+          Per-transaction spend cap, in kobo.
+        </ResponseField>
+        <ResponseField name="data.wallet.spendLimitPeriod" type="integer">
+          Rolling-period spend cap, in kobo.
+        </ResponseField>
+        <ResponseField name="data.wallet.periodWindowDays" type="integer">
+          Length of the rolling window in days.
+        </ResponseField>
+        <ResponseField name="data.wallet.useAllowlist" type="boolean">
+          Whether merchant-allowlist enforcement is active.
+        </ResponseField>
+        <ResponseField name="data.wallet.merchantAllowlist" type="string[]">
+          List of permitted merchant names (empty array when `useAllowlist` is `false`).
+        </ResponseField>
+        <ResponseField name="data.wallet.expiry" type="string">
+          ISO 8601 expiry timestamp as supplied in the request.
+        </ResponseField>
+        <ResponseField name="data.wallet.expiresAt" type="string | null">
+          Resolved expiry datetime used internally. May be `null` until processed.
+        </ResponseField>
+        <ResponseField name="data.wallet.status" type="string">
+          Wallet lifecycle status. `"ACTIVE"` immediately after creation.
+        </ResponseField>
+        <ResponseField name="data.wallet.apiKeyHash" type="string | null">
+          Hashed representation of the API key stored server-side. `null` at creation time —
+          this field is not useful to API consumers and is included for completeness only.
+        </ResponseField>
+        <ResponseField name="data.wallet.createdAt" type="string">
+          ISO 8601 timestamp of wallet creation.
+        </ResponseField>
+        <ResponseField name="data.wallet.updatedAt" type="string">
+          ISO 8601 timestamp of the most recent update.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
 
-  <Expandable title="apiKey fields">
-    <ResponseField name="apiKey.id" type="string">
-      API key UUID.
+    <ResponseField name="data.virtualAccount" type="object">
+      The virtual bank account automatically provisioned for this wallet.
+
+      <Expandable title="virtualAccount fields">
+        <ResponseField name="data.virtualAccount.id" type="string">
+          Virtual account UUID.
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.walletId" type="string">
+          The wallet this virtual account is linked to.
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.accountNumber" type="string">
+          10-digit Nigerian bank account number assigned to this wallet.
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.accountName" type="string">
+          Account name as it appears on bank transfers.
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.bankName" type="string">
+          The issuing bank name (e.g. `"Providus Bank"`).
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.providerRef" type="string">
+          Provider-assigned reference for this virtual account.
+        </ResponseField>
+        <ResponseField name="data.virtualAccount.createdAt" type="string">
+          ISO 8601 timestamp of virtual account creation.
+        </ResponseField>
+      </Expandable>
     </ResponseField>
-    <ResponseField name="apiKey.prefix" type="string">
-      The first 8 characters of the key — safe to store and display.
-    </ResponseField>
-    <ResponseField name="apiKey.fullKey" type="string">
-      The **complete** API key string. See warning below.
-    </ResponseField>
-    <ResponseField name="apiKey.createdAt" type="string">
-      ISO 8601 timestamp of key creation.
+
+    <ResponseField name="data.apiKey" type="object">
+      Credentials the agent uses to authorise payments.
+
+      <Expandable title="apiKey fields">
+        <ResponseField name="data.apiKey.id" type="string">
+          API key UUID.
+        </ResponseField>
+        <ResponseField name="data.apiKey.keyPrefix" type="string">
+          The first several characters of the key — safe to store and display for identification.
+        </ResponseField>
+        <ResponseField name="data.apiKey.fullKey" type="string">
+          The **complete** API key string. See warning below.
+        </ResponseField>
+        <ResponseField name="data.apiKey.createdAt" type="string">
+          ISO 8601 timestamp of key creation.
+        </ResponseField>
+      </Expandable>
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -174,39 +228,50 @@ Authorization: Bearer <session_jwt>
 
 ```json
 {
-  "wallet": {
-    "id": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
-    "name": "Procurement Agent — Q3 2025",
-    "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "spendLimitPerTx": 500000,
-    "spendLimitPeriod": 5000000,
-    "periodWindowDays": 30,
-    "expiry": "2026-01-31T23:59:59Z",
-    "useAllowlist": true,
-    "merchantAllowlist": ["AWS", "Vercel", "Stripe"],
-    "createdAt": "2025-07-15T09:41:02Z"
-  },
-  "virtualAccount": {
-    "id": "vac_11223344-5566-7788-99aa-bbccddeeff00",
-    "accountNumber": "0123456789",
-    "bankName": "Wema Bank",
-    "accountName": "AXIS/PROCUREMENT-AGENT-Q3",
-    "balance": 0
-  },
-  "apiKey": {
-    "id": "key_aabbccdd-eeff-0011-2233-445566778899",
-    "prefix": "ax_live_",
-    "fullKey": "ax_live_4T7kR9mXpLqZ2vNsYdWcUjBhFoGeIa",
-    "createdAt": "2025-07-15T09:41:02Z"
+  "success": true,
+  "data": {
+    "wallet": {
+      "id": "wallet-uuid",
+      "name": "Purchasing Agent v1",
+      "userId": "user-uuid",
+      "businessId": null,
+      "balance": 0,
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 2000000,
+      "periodWindowDays": 30,
+      "merchantAllowlist": [],
+      "useAllowlist": false,
+      "expiresAt": null,
+      "expiry": "2027-01-01T00:00:00.000Z",
+      "status": "ACTIVE",
+      "apiKeyHash": null,
+      "createdAt": "2026-07-21T09:00:00.000Z",
+      "updatedAt": "2026-07-21T09:00:00.000Z"
+    },
+    "virtualAccount": {
+      "id": "va-uuid",
+      "walletId": "wallet-uuid",
+      "accountNumber": "9876543210",
+      "accountName": "Purchasing Agent v1",
+      "bankName": "Providus Bank",
+      "providerRef": "mock-ref-abc123",
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "apiKey": {
+      "id": "key-uuid",
+      "keyPrefix": "ax_live_9f2a3b",
+      "fullKey": "ax_live_9f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    }
   }
 }
 ```
 
 <Warning>
-  **`apiKey.fullKey` is returned exactly once** — at creation time. It is never returned again in
-  any subsequent API response. Store it securely (e.g. in a secrets manager or encrypted
-  environment variable) before discarding the response. If the key is lost, you must rotate it
-  via the key-management endpoint.
+  **`data.apiKey.fullKey` is returned exactly once** — at creation time. It is never returned
+  again in any subsequent API response. Store it securely (e.g. in a secrets manager or
+  encrypted environment variable) before discarding the response. If the key is lost, you must
+  rotate it via the key-management endpoint.
 </Warning>
 
 ---
