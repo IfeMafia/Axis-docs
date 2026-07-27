@@ -1,0 +1,133 @@
+---
+title: "Authenticate users with session tokens (JWT)"
+sidebarTitle: "Session Auth"
+description: "Sign up or log in to get a JWT. Include it in the Authorization header to access protected endpoints from your frontend."
+---
+
+Session-based authentication is the right choice for any flow where a human is behind the keyboard — account creation, dashboard access, wallet management, and developer onboarding. When you sign up or log in, Axis returns a signed JWT. You store that token client-side and attach it to every subsequent request via the `Authorization` header. Tokens are tied to a user account, not to any individual wallet.
+
+---
+
+## Sign up
+
+**`POST /v1/auth/signup`**
+
+Create a new Axis account. The response includes a JWT that you can use immediately — no separate login step required after registration.
+
+### Request body
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `email` | string | ✓ | A valid email address |
+| `password` | string | ✓ | Minimum 6 characters |
+| `accountType` | string | ✓ | `"developer"` or `"business"` |
+| `businessName` | string | ✓ if `accountType` is `"business"` | Legal or trading name of the business |
+
+### Example
+
+```json
+// Request
+POST /v1/auth/signup
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "supersecret",
+  "accountType": "developer"
+}
+```
+
+```json
+// Response 201 Created
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "usr_01j9z2k...",
+      "email": "ada@example.com",
+      "accountType": "developer"
+    }
+  }
+}
+```
+
+---
+
+## Log in
+
+**`POST /v1/auth/login`**
+
+Exchange credentials for a fresh JWT. Use this on returning visits after the stored token has expired or been cleared.
+
+### Request body
+
+```json
+// Request
+POST /v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "supersecret"
+}
+```
+
+```json
+// Response 200 OK
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "usr_01j9z2k...",
+      "email": "ada@example.com",
+      "accountType": "developer"
+    }
+  }
+}
+```
+
+---
+
+## Log out
+
+**`POST /v1/auth/logout`**
+
+Invalidates the current session server-side. No request body is needed.
+
+```json
+// Response 200 OK
+{
+  "status": "success",
+  "message": "Logged out successfully"
+}
+```
+
+---
+
+## Using the token
+
+Once you have a token, attach it to every protected request in the `Authorization` header using the `Bearer` scheme.
+
+```typescript
+const token = localStorage.getItem("axis_token"); // or read from your auth context
+
+const response = await fetch("https://api.axis.so/v1/wallets", {
+  method: "GET",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+});
+
+const data = await response.json();
+```
+
+<Warning>
+  The JWT is never persisted on Axis servers after it is issued — **you are responsible for storing it client-side**. Common options are `localStorage` (simple, but exposed to XSS) or an `HttpOnly` secure cookie (more XSS-resistant). Whichever approach you choose, the token must be present on every request to a protected endpoint. If it is missing or expired, the API returns `401 Unauthorized`.
+</Warning>
+
+<Tip>
+  Session tokens authenticate *users*. If you need to authenticate an autonomous agent making payment calls at runtime, use a wallet-scoped API key instead. See [API Key Auth](/guides/api-key-auth).
+</Tip>

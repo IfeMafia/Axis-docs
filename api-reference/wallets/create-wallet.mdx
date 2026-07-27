@@ -1,0 +1,237 @@
+---
+title: "POST /api/wallets — provision a new agent wallet"
+sidebarTitle: "POST /wallets"
+description: "Create a scoped wallet for an AI agent. Sets per-transaction and period spend limits, expiry, and optional merchant allowlist. Returns an API key and virtual account."
+---
+
+Provision a new wallet for an AI agent. Each wallet is fully isolated — it carries its own virtual bank account, spend controls, and API key. The agent uses that key to authorise payments; your backend never touches the agent's funds directly.
+
+> **Canonical path:** `POST /api/wallets`
+> `POST /api/onboarding` redirects to this endpoint — use the canonical path for all new integrations.
+
+## Endpoint
+
+```
+POST /api/wallets
+```
+
+## Authentication
+
+Requires a valid **Session JWT** in the `Authorization` header.
+
+```
+Authorization: Bearer <session_jwt>
+```
+
+---
+
+## Request Body
+
+<ParamField body="name" type="string" required>
+  Human-readable label for this wallet. Used in the dashboard and transaction receipts.
+  Must be between **1 and 100 characters**.
+</ParamField>
+
+<ParamField body="userId" type="string" required>
+  The ID of the user who owns this wallet, as returned during sign-up. Must be a valid UUID.
+</ParamField>
+
+<ParamField body="spendLimitPerTx" type="integer" required>
+  Maximum amount the agent may spend in a **single transaction**, denominated in **kobo**
+  (100 kobo = ₦1). Requests above this threshold are automatically blocked.
+</ParamField>
+
+<ParamField body="spendLimitPeriod" type="integer" required>
+  Maximum **cumulative** spend allowed within the rolling window defined by `periodWindowDays`,
+  denominated in **kobo**. Must be greater than or equal to `spendLimitPerTx`.
+</ParamField>
+
+<ParamField body="periodWindowDays" type="integer" required default="30">
+  Length of the rolling spend window, in **days**. The period counter resets on a rolling basis
+  — not calendar-month aligned. Defaults to `30`.
+</ParamField>
+
+<ParamField body="expiry" type="string" required>
+  ISO 8601 datetime at which this wallet should automatically deactivate (e.g.
+  `"2026-01-31T23:59:59Z"`). Must be a timestamp in the future at the time of the request.
+</ParamField>
+
+<ParamField body="useAllowlist" type="boolean" default="false">
+  When `true`, the wallet will only approve payments to merchants listed in `merchantAllowlist`.
+  All other merchants are blocked regardless of spend limits.
+</ParamField>
+
+<ParamField body="merchantAllowlist" type="string[]">
+  An array of merchant name strings. **Required when `useAllowlist` is `true`.**
+  Merchant names are matched case-insensitively against the name reported by the payment
+  terminal at authorisation time.
+
+  ```json
+  ["Shopify Store", "AWS", "Vercel"]
+  ```
+</ParamField>
+
+---
+
+## Example Request
+
+```json
+{
+  "name": "Procurement Agent — Q3 2025",
+  "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "spendLimitPerTx": 500000,
+  "spendLimitPeriod": 5000000,
+  "periodWindowDays": 30,
+  "expiry": "2026-01-31T23:59:59Z",
+  "useAllowlist": true,
+  "merchantAllowlist": ["AWS", "Vercel", "Stripe"]
+}
+```
+
+---
+
+## Response `201 Created`
+
+<ResponseField name="wallet" type="object">
+  The newly created wallet object.
+
+  <Expandable title="wallet fields">
+    <ResponseField name="wallet.id" type="string">
+      Unique wallet UUID. Use this as `walletId` in all subsequent requests.
+    </ResponseField>
+    <ResponseField name="wallet.name" type="string">
+      The label supplied at creation time.
+    </ResponseField>
+    <ResponseField name="wallet.userId" type="string">
+      The owning user's ID.
+    </ResponseField>
+    <ResponseField name="wallet.spendLimitPerTx" type="integer">
+      Per-transaction spend cap, in kobo.
+    </ResponseField>
+    <ResponseField name="wallet.spendLimitPeriod" type="integer">
+      Rolling-period spend cap, in kobo.
+    </ResponseField>
+    <ResponseField name="wallet.periodWindowDays" type="integer">
+      Length of the rolling window in days.
+    </ResponseField>
+    <ResponseField name="wallet.expiry" type="string">
+      ISO 8601 expiry timestamp.
+    </ResponseField>
+    <ResponseField name="wallet.useAllowlist" type="boolean">
+      Whether merchant-allowlist enforcement is active.
+    </ResponseField>
+    <ResponseField name="wallet.merchantAllowlist" type="string[]">
+      List of permitted merchant names (empty array when `useAllowlist` is `false`).
+    </ResponseField>
+    <ResponseField name="wallet.createdAt" type="string">
+      ISO 8601 timestamp of wallet creation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="virtualAccount" type="object">
+  The virtual bank account automatically provisioned for this wallet.
+
+  <Expandable title="virtualAccount fields">
+    <ResponseField name="virtualAccount.id" type="string">
+      Virtual account UUID.
+    </ResponseField>
+    <ResponseField name="virtualAccount.accountNumber" type="string">
+      10-digit Nigerian bank account number assigned to this wallet.
+    </ResponseField>
+    <ResponseField name="virtualAccount.bankName" type="string">
+      The issuing bank name (e.g. `"Wema Bank"`).
+    </ResponseField>
+    <ResponseField name="virtualAccount.accountName" type="string">
+      Account name as it appears on bank transfers.
+    </ResponseField>
+    <ResponseField name="virtualAccount.balance" type="integer">
+      Current balance in kobo. Will be `0` for a freshly created wallet.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="apiKey" type="object">
+  Credentials the agent uses to authorise payments.
+
+  <Expandable title="apiKey fields">
+    <ResponseField name="apiKey.id" type="string">
+      API key UUID.
+    </ResponseField>
+    <ResponseField name="apiKey.prefix" type="string">
+      The first 8 characters of the key — safe to store and display.
+    </ResponseField>
+    <ResponseField name="apiKey.fullKey" type="string">
+      The **complete** API key string. See warning below.
+    </ResponseField>
+    <ResponseField name="apiKey.createdAt" type="string">
+      ISO 8601 timestamp of key creation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "wallet": {
+    "id": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+    "name": "Procurement Agent — Q3 2025",
+    "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "spendLimitPerTx": 500000,
+    "spendLimitPeriod": 5000000,
+    "periodWindowDays": 30,
+    "expiry": "2026-01-31T23:59:59Z",
+    "useAllowlist": true,
+    "merchantAllowlist": ["AWS", "Vercel", "Stripe"],
+    "createdAt": "2025-07-15T09:41:02Z"
+  },
+  "virtualAccount": {
+    "id": "vac_11223344-5566-7788-99aa-bbccddeeff00",
+    "accountNumber": "0123456789",
+    "bankName": "Wema Bank",
+    "accountName": "AXIS/PROCUREMENT-AGENT-Q3",
+    "balance": 0
+  },
+  "apiKey": {
+    "id": "key_aabbccdd-eeff-0011-2233-445566778899",
+    "prefix": "ax_live_",
+    "fullKey": "ax_live_4T7kR9mXpLqZ2vNsYdWcUjBhFoGeIa",
+    "createdAt": "2025-07-15T09:41:02Z"
+  }
+}
+```
+
+<Warning>
+  **`apiKey.fullKey` is returned exactly once** — at creation time. It is never returned again in
+  any subsequent API response. Store it securely (e.g. in a secrets manager or encrypted
+  environment variable) before discarding the response. If the key is lost, you must rotate it
+  via the key-management endpoint.
+</Warning>
+
+---
+
+## Error Responses
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `400` | `VALIDATION_ERROR` | One or more request body fields failed validation. Check the `errors` array in the response body for field-level detail. |
+| `400` | `EXPIRY_IN_PAST` | The `expiry` timestamp is not in the future. |
+| `400` | `ALLOWLIST_REQUIRED` | `useAllowlist` is `true` but `merchantAllowlist` is missing or empty. |
+| `400` | `PERIOD_LIMIT_TOO_LOW` | `spendLimitPeriod` is less than `spendLimitPerTx`. |
+| `401` | `UNAUTHORIZED` | Missing or invalid Session JWT. |
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request body validation failed.",
+    "errors": [
+      {
+        "field": "spendLimitPeriod",
+        "message": "spendLimitPeriod must be >= spendLimitPerTx"
+      }
+    ]
+  }
+}
+```

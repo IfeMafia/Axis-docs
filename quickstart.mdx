@@ -1,47 +1,292 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get started with Axis in 5 steps"
+sidebarTitle: "Quickstart"
+description: "Create a business account, provision a wallet, fund it, issue an API key, and fire your first payment — end-to-end in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through the complete Axis onboarding flow from zero to a live payment. You will sign up for a developer account, register your business, create a scoped wallet for your agent, fund the wallet via a virtual bank account, and fire your first payment intent — all in under 10 minutes. Every step below maps to a real API call your frontend or setup script will make.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Sign up">
+    Create an Axis account by posting your credentials and account type to the auth endpoint. Use `accountType: "business"` if you are setting up payment infrastructure for a product, or `"developer"` for personal/sandbox use.
+
+    **Request**
 
     ```bash
-    npm install your-package
+    curl -X POST https://your-axis-instance.com/v1/auth/signup \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "ada@paystackdemo.io",
+        "password": "Sup3rS3cret!",
+        "accountType": "business"
+      }'
     ```
+
+    ```json
+    {
+      "email": "ada@paystackdemo.io",
+      "password": "Sup3rS3cret!",
+      "accountType": "business"
+    }
+    ```
+
+    **Response**
+
+    ```json
+    {
+      "success": true,
+      "message": "Account created successfully",
+      "data": {
+        "user": {
+          "id": "usr_01hq9xkv3e5n7p2m8c4w",
+          "email": "ada@paystackdemo.io",
+          "accountType": "business",
+          "createdAt": "2025-01-15T09:00:00.000Z"
+        },
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ1c3JfMDFocTl4a3YzZTVuN3AybThjNHciLCJpYXQiOjE3MDUzMTIwMDB9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        "expiresIn": "24h"
+      }
+    }
+    ```
+
+    Store the `token` — you will send it as `Authorization: Bearer <token>` on every subsequent developer-authenticated request.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Register your business">
+    Before you can create wallets, Axis requires basic business details for KYB (Know Your Business) purposes. Submit your business profile to the onboarding endpoint.
+
+    **Request**
 
     ```bash
-    your-cli init
+    curl -X POST https://your-axis-instance.com/v1/onboarding \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      -d '{
+        "businessName": "Paystack Demo Ltd",
+        "contactEmail": "ada@paystackdemo.io",
+        "contactPhone": "+2348012345678"
+      }'
+    ```
+
+    ```json
+    {
+      "businessName": "Paystack Demo Ltd",
+      "contactEmail": "ada@paystackdemo.io",
+      "contactPhone": "+2348012345678"
+    }
+    ```
+
+    **Response**
+
+    ```json
+    {
+      "success": true,
+      "message": "Business registered successfully",
+      "data": {
+        "businessId": "biz_01hq9xkv7f6n8q3m9d5y",
+        "businessName": "Paystack Demo Ltd",
+        "contactEmail": "ada@paystackdemo.io",
+        "contactPhone": "+2348012345678",
+        "status": "active",
+        "createdAt": "2025-01-15T09:01:30.000Z"
+      }
+    }
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Create a wallet">
+    Provision a wallet for your agent. You define the spending rules here — Axis enforces them on every payment intent the agent submits.
+
+    | Field | Purpose |
+    |---|---|
+    | `spendLimitPerTx` | Maximum single transaction amount, in kobo |
+    | `spendLimitPeriod` | Maximum total spend within a rolling window, in kobo |
+    | `periodWindowDays` | Length of the rolling period window in days |
+    | `expiry` | ISO 8601 date-time after which the wallet rejects all payment intents |
+    | `useAllowlist` | When `true`, only merchants in `merchantAllowlist` are accepted |
+    | `merchantAllowlist` | Array of merchant name strings the agent is permitted to pay |
+
+    **Request**
 
     ```bash
-    your-cli start
+    curl -X POST https://your-axis-instance.com/api/wallets \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      -d '{
+        "name": "procurement-agent-wallet",
+        "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+        "spendLimitPerTx": 500000,
+        "spendLimitPeriod": 5000000,
+        "periodWindowDays": 30,
+        "expiry": "2026-01-15T00:00:00.000Z",
+        "useAllowlist": true,
+        "merchantAllowlist": ["Dangote Cement", "MTN Nigeria", "Julius Berger"]
+      }'
     ```
+
+    ```json
+    {
+      "name": "procurement-agent-wallet",
+      "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 5000000,
+      "periodWindowDays": 30,
+      "expiry": "2026-01-15T00:00:00.000Z",
+      "useAllowlist": true,
+      "merchantAllowlist": ["Dangote Cement", "MTN Nigeria", "Julius Berger"]
+    }
+    ```
+
+    **Response**
+
+    ```json
+    {
+      "success": true,
+      "message": "Wallet created successfully",
+      "data": {
+        "wallet": {
+          "id": "wal_01hq9xkv9g7o0r4n0e6z",
+          "name": "procurement-agent-wallet",
+          "userId": "usr_01hq9xkv3e5n7p2m8c4w",
+          "balance": 0,
+          "spendLimitPerTx": 500000,
+          "spendLimitPeriod": 5000000,
+          "periodWindowDays": 30,
+          "expiry": "2026-01-15T00:00:00.000Z",
+          "useAllowlist": true,
+          "merchantAllowlist": ["Dangote Cement", "MTN Nigeria", "Julius Berger"],
+          "status": "active",
+          "createdAt": "2025-01-15T09:03:00.000Z"
+        },
+        "apiKey": {
+          "id": "key_01hq9xkvah8p1s5o1f7a",
+          "prefix": "axk_live_",
+          "fullKey": "axk_live_4f8c2e1a9d3b7f6e0c5a2d8b1e4f7c0a9d3b6e2f5c8a1d4b7e0f3c6a9d2b5e8f",
+          "walletId": "wal_01hq9xkv9g7o0r4n0e6z",
+          "createdAt": "2025-01-15T09:03:00.000Z"
+        },
+        "virtualAccount": {
+          "id": "vac_01hq9xkvbh9q2t6p2g8b",
+          "accountNumber": "0123456789",
+          "accountName": "Axis / Paystack Demo Ltd",
+          "bankName": "Guaranty Trust Bank",
+          "bankCode": "058",
+          "currency": "NGN"
+        }
+      }
+    }
+    ```
+
+    <Warning>
+      The `apiKey.fullKey` value is returned **exactly once** — at wallet creation. Axis stores only a hashed version and cannot recover the plain-text key later. Copy `fullKey` into a secure secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or your CI/CD environment variables) immediately. If it is lost, you must rotate the key and update your agent's configuration.
+    </Warning>
   </Step>
+
+  <Step title="Fund the wallet">
+    Your wallet starts with a balance of `0`. To give the agent real spend authority, transfer NGN to the **virtual account number** returned in the previous step.
+
+    From the response above:
+
+    ```
+    Account Number : 0123456789
+    Account Name   : Axis / Paystack Demo Ltd
+    Bank           : Guaranty Trust Bank (058)
+    Currency       : NGN
+    ```
+
+    You can fund the wallet using:
+
+    - **Internet banking or mobile app** — a standard NGN transfer to the account number above from any Nigerian bank.
+    - **Programmatic transfer** — use your existing payment processor (e.g. Paystack, Flutterwave) to initiate a transfer to the virtual account.
+
+    Once the inbound payment settles, Axis receives a webhook from the issuing bank and automatically credits the wallet balance. The credit is reflected in the wallet's `balance` field (in kobo) and recorded as a `LedgerEntry`.
+
+    ```json
+    {
+      "event": "wallet.funded",
+      "data": {
+        "walletId": "wal_01hq9xkv9g7o0r4n0e6z",
+        "amountCredited": 2000000,
+        "newBalance": 2000000,
+        "currency": "NGN",
+        "fundedAt": "2025-01-15T09:15:42.000Z"
+      }
+    }
+    ```
+
+    There is no polling required — subscribe to the `wallet.funded` webhook event in your Axis dashboard to be notified when funds arrive.
+  </Step>
+
+  <Step title="Fire a payment intent">
+    Your agent is now ready to spend. It calls `POST /api/payment-intent`, authenticating with the `fullKey` via the `x-api-key` header — **not** the developer JWT. Axis validates the request against the wallet's rules before executing the bank transfer.
+
+    **Request**
+
+    ```bash
+    curl -X POST https://your-axis-instance.com/api/payment-intent \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: axk_live_4f8c2e1a9d3b7f6e0c5a2d8b1e4f7c0a9d3b6e2f5c8a1d4b7e0f3c6a9d2b5e8f" \
+      -d '{
+        "amount": 250000,
+        "merchantName": "Dangote Cement",
+        "recipientAccountNo": "0098765432",
+        "recipientBankCode": "058",
+        "reason": "Q1 2025 cement procurement — invoice #DC-00412"
+      }'
+    ```
+
+    ```json
+    {
+      "amount": 250000,
+      "merchantName": "Dangote Cement",
+      "recipientAccountNo": "0098765432",
+      "recipientBankCode": "058",
+      "reason": "Q1 2025 cement procurement — invoice #DC-00412"
+    }
+    ```
+
+    | Field | Type | Required | Description |
+    |---|---|---|---|
+    | `amount` | integer | ✅ | Amount in kobo (e.g. `250000` = ₦2,500.00) |
+    | `merchantName` | string | ✅ | Must match an entry in `merchantAllowlist` when `useAllowlist` is `true` |
+    | `recipientAccountNo` | string | ✅ | 10-digit NUBAN account number of the recipient |
+    | `recipientBankCode` | string | ✅ | 3-digit NIP bank code (e.g. `058` for GTBank, `011` for First Bank, `057` for Zenith) |
+    | `reason` | string | ❌ | Optional payment description attached to the transaction record |
+
+    **Success response**
+
+    ```json
+    {
+      "success": true,
+      "message": "Payment intent executed successfully",
+      "data": {
+        "transactionId": "txn_01hq9xkvci0r3u7q3h9c",
+        "status": "successful",
+        "amount": 250000,
+        "currency": "NGN",
+        "merchantName": "Dangote Cement",
+        "recipientAccountNo": "0098765432",
+        "recipientBankCode": "058",
+        "recipientAccountName": "Dangote Cement PLC",
+        "reason": "Q1 2025 cement procurement — invoice #DC-00412",
+        "walletBalanceAfter": 1750000,
+        "executedAt": "2025-01-15T10:02:17.000Z"
+      }
+    }
+    ```
+
+    Axis checks all of the following before executing the transfer. A failed check returns a `400` or `403` with a descriptive error:
+
+    - Wallet is **active** and not expired
+    - `amount` ≤ `spendLimitPerTx`
+    - Total spend in the current period window + `amount` ≤ `spendLimitPeriod`
+    - Wallet `balance` ≥ `amount`
+    - `merchantName` is in `merchantAllowlist` (when `useAllowlist: true`)
+  </Step>
+
 </Steps>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  The example above uses the **API key** auth mode (`x-api-key` header), which is what agents use at runtime. The developer **JWT** mode (`Authorization: Bearer`) is used for provisioning operations like creating wallets, viewing audit logs, and managing keys. See the [Auth Overview](/guides/auth-overview) for a full breakdown of both modes, token lifetimes, and how to rotate keys without downtime.
 </Tip>

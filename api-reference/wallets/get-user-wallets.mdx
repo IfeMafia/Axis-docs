@@ -1,0 +1,191 @@
+---
+title: "GET /api/wallets/user/:userId — list all wallets for a user"
+sidebarTitle: "GET /user/:userId"
+description: "List every wallet belonging to a user. Returns wallet configurations and virtual account details. Useful for populating a wallet management dashboard."
+---
+
+Return every wallet associated with a given user, ordered by creation date descending. Each
+wallet in the response includes its full configuration, virtual account details, and API key
+prefixes. Use this endpoint to populate a wallet management dashboard or to let users audit
+which agents have been provisioned on their account.
+
+## Endpoint
+
+```
+GET /api/wallets/user/:userId
+```
+
+## Authentication
+
+Requires a valid **Session JWT** in the `Authorization` header.
+
+```
+Authorization: Bearer <session_jwt>
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="userId" type="string" required>
+  The UUID of the user whose wallets you want to list. Must match the `userId` associated with
+  the current session, or the request will be rejected with `403 Forbidden`.
+</ParamField>
+
+---
+
+## Response `200 OK`
+
+Returns an array of wallet objects. Each item has the same shape as a single wallet returned
+by `GET /api/wallets/:walletId`.
+
+<ResponseField name="[]" type="object[]">
+  Array of wallet objects belonging to the user.
+
+  <Expandable title="wallet fields">
+    <ResponseField name="[].id" type="string">
+      Unique wallet UUID.
+    </ResponseField>
+    <ResponseField name="[].name" type="string">
+      Human-readable wallet label.
+    </ResponseField>
+    <ResponseField name="[].userId" type="string">
+      UUID of the owning user.
+    </ResponseField>
+    <ResponseField name="[].spendLimitPerTx" type="integer">
+      Per-transaction spend cap, in kobo.
+    </ResponseField>
+    <ResponseField name="[].spendLimitPeriod" type="integer">
+      Rolling-period cumulative spend cap, in kobo.
+    </ResponseField>
+    <ResponseField name="[].periodWindowDays" type="integer">
+      Length of the rolling spend window, in days.
+    </ResponseField>
+    <ResponseField name="[].expiry" type="string">
+      ISO 8601 datetime at which the wallet deactivates.
+    </ResponseField>
+    <ResponseField name="[].useAllowlist" type="boolean">
+      Whether merchant-allowlist enforcement is active.
+    </ResponseField>
+    <ResponseField name="[].merchantAllowlist" type="string[]">
+      Permitted merchant names. Empty array when `useAllowlist` is `false`.
+    </ResponseField>
+    <ResponseField name="[].createdAt" type="string">
+      ISO 8601 timestamp of wallet creation.
+    </ResponseField>
+    <ResponseField name="[].virtualAccount" type="object">
+      Virtual bank account linked to this wallet.
+
+      <Expandable title="virtualAccount fields">
+        <ResponseField name="[].virtualAccount.id" type="string">
+          Virtual account UUID.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.accountNumber" type="string">
+          10-digit Nigerian bank account number.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.bankName" type="string">
+          Issuing bank name.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.accountName" type="string">
+          Account name as displayed on transfers.
+        </ResponseField>
+        <ResponseField name="[].virtualAccount.balance" type="integer">
+          Current balance, in kobo.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="[].apiKeys" type="object[]">
+      API keys for this wallet. Only `prefix` is returned, never `fullKey`.
+
+      <Expandable title="apiKey fields">
+        <ResponseField name="[].apiKeys[].id" type="string">
+          API key UUID.
+        </ResponseField>
+        <ResponseField name="[].apiKeys[].prefix" type="string">
+          First 8 characters of the key.
+        </ResponseField>
+        <ResponseField name="[].apiKeys[].createdAt" type="string">
+          ISO 8601 timestamp of key issuance.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+[
+  {
+    "id": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+    "name": "Procurement Agent — Q3 2025",
+    "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "spendLimitPerTx": 500000,
+    "spendLimitPeriod": 5000000,
+    "periodWindowDays": 30,
+    "expiry": "2026-01-31T23:59:59Z",
+    "useAllowlist": true,
+    "merchantAllowlist": ["AWS", "Vercel", "Stripe"],
+    "createdAt": "2025-07-15T09:41:02Z",
+    "virtualAccount": {
+      "id": "vac_11223344-5566-7788-99aa-bbccddeeff00",
+      "accountNumber": "0123456789",
+      "bankName": "Wema Bank",
+      "accountName": "AXIS/PROCUREMENT-AGENT-Q3",
+      "balance": 1250000
+    },
+    "apiKeys": [
+      {
+        "id": "key_aabbccdd-eeff-0011-2233-445566778899",
+        "prefix": "ax_live_",
+        "createdAt": "2025-07-15T09:41:02Z"
+      }
+    ]
+  },
+  {
+    "id": "wlt_c1d2e3f4-a5b6-4789-0cde-f12345678901",
+    "name": "Travel Booking Agent",
+    "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "spendLimitPerTx": 1000000,
+    "spendLimitPeriod": 10000000,
+    "periodWindowDays": 30,
+    "expiry": "2025-12-31T23:59:59Z",
+    "useAllowlist": false,
+    "merchantAllowlist": [],
+    "createdAt": "2025-06-01T14:22:10Z",
+    "virtualAccount": {
+      "id": "vac_aabb1122-ccdd-3344-eeff-556677889900",
+      "accountNumber": "0987654321",
+      "bankName": "Wema Bank",
+      "accountName": "AXIS/TRAVEL-BOOKING-AGENT",
+      "balance": 3500000
+    },
+    "apiKeys": [
+      {
+        "id": "key_11223344-aabb-ccdd-eeff-001122334455",
+        "prefix": "ax_live_",
+        "createdAt": "2025-06-01T14:22:10Z"
+      }
+    ]
+  }
+]
+```
+
+---
+
+## Error Responses
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `401` | `UNAUTHORIZED` | Missing or invalid Session JWT. |
+| `403` | `FORBIDDEN` | The authenticated session does not have access to the requested `userId`. |
+| `404` | `USER_NOT_FOUND` | No user exists with the supplied `userId`. |
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "You do not have permission to list wallets for this user."
+  }
+}
+```

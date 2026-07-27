@@ -1,0 +1,66 @@
+---
+title: "Axis: Payment Infrastructure for AI Agents"
+sidebarTitle: "Introduction"
+description: "Axis gives your AI agents a scoped wallet with real spend authority — per-transaction limits, period caps, merchant allowlists, and a full audit trail."
+---
+
+Axis is payment infrastructure built specifically for autonomous AI agents. Instead of giving an agent unrestricted access to a payment method, you provision a **scoped wallet** — a spending account with hard limits, an optional merchant allowlist, and a complete audit trail. This documentation covers everything a frontend developer needs to connect a client application to the Axis backend: authentication, wallet management, funding via virtual accounts, and triggering payment intents from an agent.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Create an account, provision a wallet, fund it, and fire your first payment in under 10 minutes.
+  </Card>
+  <Card title="Auth Overview" icon="lock" href="/guides/auth-overview">
+    Understand the two authentication modes — developer JWTs for the dashboard and API keys for agents.
+  </Card>
+  <Card title="Wallets" icon="wallet" href="/guides/wallets">
+    Deep-dive into spend limits, period windows, merchant allowlists, and wallet lifecycle management.
+  </Card>
+  <Card title="Create a Wallet (API)" icon="code" href="/api-reference/wallets/create-wallet">
+    Full API reference for `POST /api/wallets`, including every request field and response shape.
+  </Card>
+</CardGroup>
+
+## Core concept
+
+The central primitive in Axis is the **Wallet**. Here is the end-to-end flow:
+
+1. **You provision a wallet.** As a developer or business owner, you call `POST /api/wallets` with the spending rules you want to enforce — a per-transaction cap, a rolling period limit, an expiry date, and an optional list of approved merchants.
+2. **You fund the wallet.** Every wallet is backed by a dedicated virtual bank account. Transfer NGN to that account number and Axis automatically credits the wallet balance.
+3. **You issue an API key to your agent.** The wallet creation response includes a `fullKey` — a plain-text secret your agent uses to authenticate payment requests. Store it in your agent's environment; it is shown only once.
+4. **Your agent spends.** The agent calls `POST /api/payment-intent` with the `x-api-key` header set to `fullKey`. Axis validates every request against the wallet's rules before executing the transfer.
+
+```
+Developer                        Axis                          Agent
+   |                               |                              |
+   |-- POST /api/wallets --------> |                              |
+   |<- { apiKey.fullKey,           |                              |
+   |     virtualAccount.number } --|                              |
+   |                               |                              |
+   |-- Fund virtual account -----> |                              |
+   |                               |-- credits wallet balance     |
+   |                               |                              |
+   |-- share fullKey ------------> | <-- x-api-key: fullKey ------|
+   |                               |-- POST /api/payment-intent --|
+   |                               |-- validates limits & list    |
+   |                               |-- executes transfer -------> |
+```
+
+## Data model
+
+These are the eight core entities you will encounter throughout the API and this documentation.
+
+| Entity | Description |
+|---|---|
+| **Wallet** | A scoped spending account bound to a user, with configurable per-transaction and period spend limits, an optional expiry, and an optional merchant allowlist. |
+| **ApiKey** | A hashed credential tied to exactly one wallet. The plain-text `fullKey` is returned once at creation time and is used by the agent as a bearer token. |
+| **VirtualAccount** | A dedicated NGN bank account number automatically generated for each wallet. Inbound transfers to this account credit the wallet balance. |
+| **Merchant** | A named payee that can be added to a wallet's allowlist. When `useAllowlist` is `true`, the agent may only pay approved merchants. |
+| **Transaction** | A record of every payment intent execution, including amount, merchant, recipient account details, status, and timestamps. |
+| **AuditEvent** | An append-only log entry capturing every significant action — wallet creation, limit changes, key rotation, payment attempts — for compliance and debugging. |
+| **Settlement** | A batched or real-time settlement record that tracks the movement of funds from Axis to downstream bank rails. |
+| **LedgerEntry** | A double-entry bookkeeping line item recording every credit (funding) and debit (payment) against a wallet's balance. |
+
+<Note>
+  All monetary amounts in the Axis API are expressed in the **smallest currency unit**. For Nigerian Naira (NGN) that is **kobo** — so ₦1,500.00 is represented as `150000`. Always convert before sending a request and after receiving a response.
+</Note>

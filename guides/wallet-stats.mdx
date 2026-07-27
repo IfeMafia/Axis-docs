@@ -1,0 +1,218 @@
+---
+title: "Get live wallet statistics and spending summary"
+sidebarTitle: "Wallet Stats"
+description: "The stats endpoint returns a wallet's current balance, approved transaction count, total spend, and recent activity — ideal for dashboard cards."
+---
+
+The stats endpoint gives you a **pre-aggregated summary** of a wallet's activity — perfect for building a dashboard overview card without needing to aggregate transactions yourself. Rather than fetching pages of transactions and summing them client-side, a single request to the stats endpoint returns everything you need to render a spend overview.
+
+## Endpoints
+
+### `GET /v1/wallets/:id/stats`
+
+Returns aggregated statistics for a single wallet. No query parameters required.
+
+**Example response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "walletId": "a1b2c3d4-0000-4e5a-9abc-000000000000",
+    "balance": 4500000,
+    "approvedTransactionCount": 18,
+    "totalAmountSpent": 9000000,
+    "blockedTransactionCount": 3
+  }
+}
+```
+
+**Stats fields**
+
+| Field                      | Type   | Description                                                             |
+| -------------------------- | ------ | ----------------------------------------------------------------------- |
+| `walletId`                 | string | UUID of the wallet                                                      |
+| `balance`                  | number | Current wallet balance in **kobo** — divide by 100 to display in naira |
+| `approvedTransactionCount` | number | Total number of successfully approved transactions                       |
+| `totalAmountSpent`         | number | Cumulative amount spent across all approved transactions, in kobo       |
+| `blockedTransactionCount`  | number | Total number of blocked payment attempts                                |
+
+### `GET /v1/wallets/:id/transactions`
+
+Returns the most recent transactions for a wallet without pagination. Use the `limit` parameter to control how many records come back.
+
+**Query parameters**
+
+| Parameter | Type   | Default | Description                              |
+| --------- | ------ | ------- | ---------------------------------------- |
+| `limit`   | number | `20`    | Maximum number of transactions to return |
+
+Pair this with the stats endpoint to populate both the summary card and the recent activity list in a single render cycle.
+
+## React example: stats dashboard card
+
+The component below fetches wallet stats, converts kobo to naira for display, and renders a spend-vs-limit progress bar alongside transaction counts.
+
+```tsx
+import { useEffect, useState } from "react";
+
+interface WalletStats {
+  walletId: string;
+  balance: number;
+  approvedTransactionCount: number;
+  totalAmountSpent: number;
+  blockedTransactionCount: number;
+}
+
+interface WalletStatsCardProps {
+  walletId: string;
+  apiKey: string;
+  spendLimitKobo: number; // your configured spend limit, for the progress bar
+}
+
+function koboToNaira(kobo: number): string {
+  return (kobo / 100).toLocaleString("en-NG", {
+    style: "currency",
+    currency: "NGN",
+  });
+}
+
+export function WalletStatsCard({
+  walletId,
+  apiKey,
+  spendLimitKobo,
+}: WalletStatsCardProps) {
+  const [stats, setStats] = useState<WalletStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`/v1/wallets/${walletId}/stats`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        setStats(json.data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load stats");
+      }
+    };
+
+    fetchStats();
+  }, [walletId, apiKey]);
+
+  if (error)   return <p className="text-red-500">Error: {error}</p>;
+  if (!stats)  return <p className="text-gray-400">Loading stats…</p>;
+
+  const spendPercent = Math.min(
+    (stats.totalAmountSpent / spendLimitKobo) * 100,
+    100
+  );
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
+      <div>
+        <p className="text-sm text-gray-500">Current Balance</p>
+        <p className="text-3xl font-bold text-gray-900">
+          {koboToNaira(stats.balance)}
+        </p>
+      </div>
+
+      <div>
+        <div className="flex justify-between text-sm text-gray-600 mb-1">
+          <span>Spend</span>
+          <span>
+            {koboToNaira(stats.totalAmountSpent)} / {koboToNaira(spendLimitKobo)}
+          </span>
+        </div>
+        <div className="h-2 w-full rounded-full bg-gray-100">
+          <div
+            className="h-2 rounded-full bg-indigo-500 transition-all"
+            style={{ width: `${spendPercent}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 pt-2">
+        <div className="rounded-lg bg-green-50 p-3 text-center">
+          <p className="text-2xl font-semibold text-green-700">
+            {stats.approvedTransactionCount}
+          </p>
+          <p className="text-xs text-green-600">Approved</p>
+        </div>
+        <div className="rounded-lg bg-red-50 p-3 text-center">
+          <p className="text-2xl font-semibold text-red-700">
+            {stats.blockedTransactionCount}
+          </p>
+          <p className="text-xs text-red-600">Blocked</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## Polling for live updates
+
+Axis uses **short-polling** rather than WebSockets. To keep your dashboard card current, set up a polling interval of 1–2 seconds on the stats endpoint. The `useEffect` hook below starts polling on mount and clears the interval when the component unmounts.
+
+```tsx
+import { useEffect, useState, useRef } from "react";
+
+function useWalletStats(walletId: string, apiKey: string, intervalMs = 1500) {
+  const [stats, setStats] = useState<WalletStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`/v1/wallets/${walletId}/stats`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        setStats(json.data);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      }
+    };
+
+    // Fetch immediately, then start polling
+    fetchStats();
+    intervalRef.current = setInterval(fetchStats, intervalMs);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [walletId, apiKey, intervalMs]);
+
+  return { stats, error };
+}
+
+// Usage in a component:
+export function LiveStatsCard({ walletId, apiKey, spendLimitKobo }) {
+  const { stats, error } = useWalletStats(walletId, apiKey, 1500);
+
+  if (error)  return <p className="text-red-500">Error: {error}</p>;
+  if (!stats) return <p className="text-gray-400">Connecting…</p>;
+
+  return (
+    <WalletStatsCard
+      walletId={walletId}
+      apiKey={apiKey}
+      spendLimitKobo={spendLimitKobo}
+    />
+  );
+}
+```
+
+The hook fetches once immediately, then re-fetches every `intervalMs` milliseconds. The cleanup function returned from `useEffect` cancels the interval when the component unmounts, preventing memory leaks and stale state updates.
+
+<Tip>
+  The stats endpoint gives you the current aggregated balance, but if you need the full
+  immutable history of every balance change — top-ups, debits, and refunds — see
+  [Query the Axis ledger](/guides/ledger).
+</Tip>

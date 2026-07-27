@@ -1,0 +1,179 @@
+---
+title: "GET /api/wallets/:walletId/transactions — paginated transaction history"
+sidebarTitle: "GET /transactions"
+description: "Fetch paginated transaction records for a wallet, sorted newest first. Includes both approved and blocked attempts with decision and blockReason fields."
+---
+
+Retrieve the full transaction history for a wallet, paginated and sorted newest-first. Every
+authorisation attempt is recorded — including those that were **blocked** by spend controls or
+the merchant allowlist. The `decision` field tells you the outcome, and `blockReason` explains
+why a transaction was rejected, making it straightforward to surface this information in a
+dashboard or agent audit log.
+
+## Endpoint
+
+```
+GET /api/wallets/:walletId/transactions
+```
+
+## Authentication
+
+Requires a valid **Session JWT** in the `Authorization` header.
+
+```
+Authorization: Bearer <session_jwt>
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="walletId" type="string" required>
+  The UUID of the wallet whose transaction history you want to retrieve.
+</ParamField>
+
+---
+
+## Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  The page number to retrieve. Pages are 1-indexed.
+</ParamField>
+
+<ParamField query="pageSize" type="integer" default="10">
+  The number of records to return per page. Maximum value is `100`.
+</ParamField>
+
+---
+
+## Response `200 OK`
+
+<ResponseField name="data" type="object[]">
+  Array of transaction records for the requested page, sorted newest-first.
+
+  <Expandable title="transaction fields">
+    <ResponseField name="data[].id" type="string">
+      Unique transaction UUID.
+    </ResponseField>
+    <ResponseField name="data[].walletId" type="string">
+      The wallet this transaction belongs to.
+    </ResponseField>
+    <ResponseField name="data[].amount" type="integer">
+      Transaction amount in **kobo**.
+    </ResponseField>
+    <ResponseField name="data[].currency" type="string">
+      ISO 4217 currency code. Currently always `"NGN"`.
+    </ResponseField>
+    <ResponseField name="data[].merchantName" type="string">
+      Name of the merchant at the point of authorisation.
+    </ResponseField>
+    <ResponseField name="data[].merchantCategory" type="string">
+      Merchant category code (MCC) description, when available.
+    </ResponseField>
+    <ResponseField name="data[].decision" type="string">
+      Authorisation outcome. One of:
+      - `"approved"` — the transaction was approved and funds were reserved.
+      - `"blocked"` — the transaction was rejected by a spend control or allowlist rule.
+    </ResponseField>
+    <ResponseField name="data[].blockReason" type="string | null">
+      Human-readable explanation of why the transaction was blocked. `null` for approved
+      transactions. Possible values include:
+      - `"exceeds_per_tx_limit"` — amount exceeded `spendLimitPerTx`.
+      - `"exceeds_period_limit"` — would exceed `spendLimitPeriod` for the current window.
+      - `"merchant_not_in_allowlist"` — merchant is not in `merchantAllowlist`.
+      - `"wallet_expired"` — the wallet's `expiry` has passed.
+    </ResponseField>
+    <ResponseField name="data[].reference" type="string">
+      Unique payment reference string. Useful for reconciliation.
+    </ResponseField>
+    <ResponseField name="data[].createdAt" type="string">
+      ISO 8601 timestamp of the authorisation attempt.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Metadata about the paginated result set.
+
+  <Expandable title="pagination fields">
+    <ResponseField name="pagination.page" type="integer">
+      The current page number.
+    </ResponseField>
+    <ResponseField name="pagination.pageSize" type="integer">
+      The number of records per page.
+    </ResponseField>
+    <ResponseField name="pagination.totalCount" type="integer">
+      Total number of transaction records across all pages.
+    </ResponseField>
+    <ResponseField name="pagination.totalPages" type="integer">
+      Total number of pages at the current `pageSize`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "txn_d4e5f6a7-b8c9-4012-8def-012345678901",
+      "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+      "amount": 345000,
+      "currency": "NGN",
+      "merchantName": "AWS",
+      "merchantCategory": "Computer Programming, Data Processing",
+      "decision": "approved",
+      "blockReason": null,
+      "reference": "AXS-20250715-0041",
+      "createdAt": "2025-07-15T11:03:44Z"
+    },
+    {
+      "id": "txn_e5f6a7b8-c9d0-4123-9ef0-123456789012",
+      "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+      "amount": 750000,
+      "currency": "NGN",
+      "merchantName": "Rackspace",
+      "merchantCategory": "Computer Programming, Data Processing",
+      "decision": "blocked",
+      "blockReason": "merchant_not_in_allowlist",
+      "reference": "AXS-20250715-0039",
+      "createdAt": "2025-07-15T10:58:17Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10,
+    "totalCount": 47,
+    "totalPages": 5
+  }
+}
+```
+
+### Understanding `decision` and `blockReason`
+
+| `decision` | `blockReason` | What happened |
+|------------|---------------|---------------|
+| `approved` | `null` | Payment went through. Funds were debited from the wallet. |
+| `blocked` | `exceeds_per_tx_limit` | The requested amount was above `spendLimitPerTx`. |
+| `blocked` | `exceeds_period_limit` | Approving this transaction would have pushed cumulative spend over `spendLimitPeriod` for the current rolling window. |
+| `blocked` | `merchant_not_in_allowlist` | `useAllowlist` is `true` and the merchant name was not found in `merchantAllowlist`. |
+| `blocked` | `wallet_expired` | The wallet's `expiry` timestamp had already passed when the authorisation was attempted. |
+
+---
+
+## Error Responses
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `401` | `UNAUTHORIZED` | Missing or invalid Session JWT. |
+| `404` | `WALLET_NOT_FOUND` | No wallet exists with the supplied `walletId`. |
+
+```json
+{
+  "error": {
+    "code": "WALLET_NOT_FOUND",
+    "message": "No wallet found with ID wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321."
+  }
+}
+```

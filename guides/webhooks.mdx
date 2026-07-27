@@ -1,0 +1,73 @@
+---
+title: "Handle inbound webhooks from Axis"
+sidebarTitle: "Webhooks"
+description: "Axis receives Korapay charge.success events at POST /api/webhooks to credit wallet balances. Learn the expected payload shape and how Axis processes it."
+---
+
+Axis exposes a webhook endpoint that your banking provider (Korapay) calls when a virtual account receives a payment. This is how wallet balances get topped up automatically — your frontend does not need to do anything to trigger it. When the event arrives, Axis looks up the destination wallet, credits the balance, and creates a `LedgerEntry` of type `topup`.
+
+## Webhook endpoint
+
+```
+POST /api/webhooks
+```
+
+This endpoint is called by Korapay, not by your application. You do not need to authenticate or call it yourself.
+
+## Expected event type
+
+Axis processes events where `event === "charge.success"`. Any other event type is acknowledged but ignored.
+
+## Payload shape
+
+```json
+{
+  "event": "charge.success",
+  "data": {
+    "reference": "pay_ref_123",
+    "payment_reference": "korapay_ref_abc",
+    "amount": 5000.00,
+    "fee": 50.00,
+    "currency": "NGN",
+    "payment_method": "bank_transfer",
+    "status": "success",
+    "narration": "Transfer from Acme Corp",
+    "transaction_date": "2026-07-21T09:30:00.000Z",
+    "payer_bank_account": {
+      "account_name": "Acme Corp",
+      "account_number": "0123456789",
+      "bank_name": "Access Bank",
+      "bank_code": "044"
+    },
+    "virtual_bank_account": {
+      "account_name": "Purchasing Agent v1",
+      "account_number": "9876543210",
+      "bank_name": "Providus Bank",
+      "account_reference": "wallet-uuid"
+    },
+    "customer": {
+      "name": "Acme Corp",
+      "email": "dev@acme.io"
+    }
+  }
+}
+```
+
+### How Axis resolves the destination wallet
+
+The key field is **`data.virtual_bank_account.account_reference`**. This value is the `walletId` that Axis stored when the virtual account was provisioned. When a `charge.success` event arrives, Axis:
+
+1. Reads `data.virtual_bank_account.account_reference` to find the target wallet.
+2. Converts `data.amount` (in NGN float) to kobo and credits the wallet's balance.
+3. Creates a `LedgerEntry` of type `topup` linked to that wallet.
+4. Returns `200 OK` to acknowledge the event.
+
+If the `account_reference` does not match any wallet, the event is logged and a `400` is returned to the provider so it can alert you.
+
+<Note>
+  `POST /api/webhooks` is called by the payment provider, not by your frontend. You do not need to call this endpoint directly or include it in your client-side code.
+</Note>
+
+<Tip>
+  After initiating a bank transfer to a virtual account, poll `GET /api/wallets/:walletId` every 1–2 seconds to detect the balance increase and reflect it in your UI. See [Virtual Accounts](/guides/virtual-accounts) for a ready-made React polling hook.
+</Tip>

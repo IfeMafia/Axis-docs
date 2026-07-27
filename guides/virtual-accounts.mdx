@@ -1,0 +1,144 @@
+---
+title: "Fund wallets via virtual bank accounts"
+sidebarTitle: "Virtual Accounts"
+description: "Every Axis wallet has a dedicated virtual account number. Send NGN to it to credit the wallet balance. Funding is detected via inbound webhooks."
+---
+
+Each wallet is automatically assigned a **dedicated virtual bank account** at creation time. To add funds, send money to that account number via any Nigerian bank transfer. Axis detects the incoming payment via a webhook from the banking provider and credits the wallet's balance — no manual reconciliation required.
+
+## Finding your virtual account
+
+The `virtualAccount` object is included in the wallet creation response and in any subsequent `GET /api/wallets/:walletId` call.
+
+| Field | Description |
+|---|---|
+| `accountNumber` | 10-digit bank account number to send funds to |
+| `accountName` | The name registered on the account |
+| `bankName` | The receiving bank (e.g. `"Providus Bank"`) |
+| `providerRef` | Internal reference used to reconcile the inbound payment |
+
+### Example `virtualAccount` object
+
+```json
+{
+  "id": "wallet-uuid-001",
+  "label": "Purchasing Agent v1",
+  "balance": 2500000,
+  "currency": "NGN",
+  "status": "ACTIVE",
+  "virtualAccount": {
+    "accountNumber": "9876543210",
+    "accountName": "Purchasing Agent v1",
+    "bankName": "Providus Bank",
+    "providerRef": "korapay-va-ref-xyz"
+  }
+}
+```
+
+## Funding flow
+
+Here's what happens end-to-end when you top up a wallet:
+
+1. **Get the account number** — read `virtualAccount.accountNumber` from the wallet object.
+2. **Initiate a bank transfer** — send NGN to that account number from any Nigerian bank (mobile app, internet banking, USSD, etc.).
+3. **Provider fires a webhook** — once the payment clears, the banking provider calls Axis at `POST /api/webhooks` with a `charge.success` event.
+4. **Axis credits the wallet** — Axis matches the payment to the correct wallet via the `account_reference`, credits the balance, and creates a `LedgerEntry` of type `topup`.
+5. **Balance increases** — `GET /api/wallets/:walletId` will reflect the new balance on the next poll.
+
+<Note>
+  In the current version, virtual accounts are **mocked** for hackathon demo purposes — no real bank transfer is required. The system is architected to integrate with **Monnify Reserved Accounts** or **Korapay** in production. The webhook schema is already defined and aligned with Korapay `charge.success` events, so the switch to live funding is a configuration change only.
+</Note>
+
+## Polling for balance updates
+
+Axis does not currently expose a WebSocket for real-time balance events. To reflect a top-up in your UI as soon as it lands, poll `GET /api/wallets/:walletId` on a short interval. The example below shows a reusable React hook that polls every 1.5 seconds and stops automatically when the component unmounts.
+
+```tsx
+import { useState, useEffect, useRef } from "react";
+
+interface VirtualAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  providerRef: string;
+}
+
+interface Wallet {
+  id: string;
+  label: string;
+  balance: number;
+  currency: string;
+  status: string;
+  virtualAccount: VirtualAccount;
+}
+
+function useWalletBalance(
+  walletId: string,
+  apiKey: string,
+  intervalMs = 1500
+): { wallet: Wallet | null; loading: boolean; error: Error | null } {
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchWallet = async () => {
+    try {
+      const res = await fetch(
+        `https://your-axis-instance.com/api/wallets/${walletId}`,
+        { headers: { "x-api-key": apiKey } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setWallet(json.data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWallet(); // immediate first fetch
+    intervalRef.current = setInterval(fetchWallet, intervalMs);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [walletId, apiKey, intervalMs]);
+
+  return { wallet, loading, error };
+}
+
+// Usage
+export function WalletBalanceDisplay({
+  walletId,
+  apiKey,
+}: {
+  walletId: string;
+  apiKey: string;
+}) {
+  const { wallet, loading, error } = useWalletBalance(walletId, apiKey);
+
+  if (loading) return <p>Loading wallet…</p>;
+  if (error) return <p>Error: {error.message}</p>;
+  if (!wallet) return null;
+
+  // Format kobo → Naira
+  const naira = (wallet.balance / 100).toLocaleString("en-NG", {
+    style: "currency",
+    currency: "NGN",
+  });
+
+  return (
+    <div>
+      <h2>{wallet.label}</h2>
+      <p>Balance: {naira}</p>
+      <p>
+        Fund via: <strong>{wallet.virtualAccount.accountNumber}</strong>{" "}
+        ({wallet.virtualAccount.bankName})
+      </p>
+    </div>
+  );
+}
+```

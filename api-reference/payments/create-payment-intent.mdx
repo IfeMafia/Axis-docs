@@ -1,0 +1,350 @@
+---
+title: "POST /api/payment-intent — authorize and settle a payment"
+sidebarTitle: "POST /payment-intent"
+description: "Submit a payment intent to debit a wallet. Requires x-api-key header. Runs 6 authorization checks before debiting. Returns transaction and settlement details."
+---
+
+This is the primary action endpoint for AI agents. The agent calls this endpoint with recipient details; Axis runs six authorization checks in sequence and either approves the payment — debiting the wallet and processing settlement — or blocks it, recording the attempt for audit purposes. All amounts are expressed in **kobo** (1 NGN = 100 kobo).
+
+## Endpoint
+
+```
+POST /api/payment-intent
+```
+
+## Authentication
+
+<ParamField header="x-api-key" type="string" required>
+  The wallet's live API key, prefixed `ax_live_...`. Issued when the wallet is created. This key scopes the request to a specific wallet — there is no separate wallet ID in the request body.
+</ParamField>
+
+## Request Body
+
+<ParamField body="amount" type="integer" required>
+  Payment amount in kobo. Must be greater than `0`. For example, `500000` kobo = ₦5,000.
+</ParamField>
+
+<ParamField body="merchantName" type="string" required>
+  Name of the merchant or recipient. Minimum 3 characters. Used for allowlist checks when `wallet.useAllowlist` is `true`.
+</ParamField>
+
+<ParamField body="recipientAccountNo" type="string" required>
+  Recipient's Nigerian bank account number. Must be exactly 10 digits.
+</ParamField>
+
+<ParamField body="recipientBankCode" type="string" required>
+  3-digit NIP bank code identifying the recipient's bank. Common values:
+  - `"058"` — GTBank
+  - `"044"` — Access Bank
+  - `"011"` — First Bank
+</ParamField>
+
+<ParamField body="reason" type="string">
+  Human-readable payment description. Maximum 200 characters. Stored on the transaction record and visible in transaction history.
+</ParamField>
+
+## Request Example
+
+```json
+{
+  "amount": 500000,
+  "merchantName": "Jumia Nigeria",
+  "recipientAccountNo": "0123456789",
+  "recipientBankCode": "058",
+  "reason": "Monthly SaaS subscription"
+}
+```
+
+## Authorization Checks
+
+Before debiting the wallet, Axis runs the following checks **in order**. The first failure stops processing and returns the corresponding error code — subsequent checks are not evaluated.
+
+1. **Wallet is active** — `wallet.status` must be `ACTIVE`
+2. **Wallet has not expired** — the current timestamp must be before `wallet.expiry`
+3. **Per-transaction limit** — `amount` must be ≤ `wallet.spendLimitPerTx`
+4. **Period spend limit** — total approved spend in the last `wallet.periodWindowDays` days plus `amount` must be ≤ `wallet.spendLimitPeriod`
+5. **Merchant allowlist** — if `wallet.useAllowlist` is `true`, `merchantName` must appear in the wallet's merchant allowlist
+6. **Sufficient balance** — `amount` must be ≤ `wallet.balance`
+
+## Response — 201 Created
+
+A `201` is returned only when the payment is approved and settlement is initiated. The response body includes the full transaction record and a settlement reference.
+
+<ResponseField name="success" type="boolean">
+  Always `true` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for the transaction and settlement details.
+
+  <Expandable title="data fields">
+    <ResponseField name="data.transaction" type="object">
+      The created transaction record.
+
+      <Expandable title="transaction fields">
+        <ResponseField name="data.transaction.id" type="string">
+          Unique UUID for this transaction.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.walletId" type="string">
+          UUID of the wallet that was debited.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.amount" type="integer">
+          Payment amount in kobo.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.merchantName" type="string">
+          Merchant name as supplied in the request.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.recipientAccountNo" type="string">
+          Recipient account number.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.recipientBankCode" type="string">
+          Recipient bank code.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.decision" type="string">
+          `"approved"` for a successful payment intent, `"blocked"` for a rejected one.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.reason" type="string">
+          Payment description as supplied in the request.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.blockReason" type="string | null">
+          `null` when `decision` is `"approved"`. Contains the block reason code when `decision` is `"blocked"`.
+        </ResponseField>
+
+        <ResponseField name="data.transaction.createdAt" type="string">
+          ISO 8601 timestamp of when the transaction was created.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="data.settlement" type="object">
+      Settlement details for the approved payment.
+
+      <Expandable title="settlement fields">
+        <ResponseField name="data.settlement.reference" type="string">
+          Unique settlement reference string for this payment.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "data": {
+    "transaction": {
+      "id": "a1b2c3d4-e5f6-...",
+      "walletId": "w1a2b3c4-...",
+      "amount": 500000,
+      "merchantName": "Jumia Nigeria",
+      "recipientAccountNo": "0123456789",
+      "recipientBankCode": "058",
+      "decision": "approved",
+      "reason": "Monthly SaaS subscription",
+      "blockReason": null,
+      "createdAt": "2026-07-21T10:00:00.000Z"
+    },
+    "settlement": {
+      "reference": "mock-settle-a1b2c3"
+    }
+  }
+}
+```
+
+## Error Responses
+
+All error responses share the same shape:
+
+```json
+{
+  "success": false,
+  "message": "Human-readable description of the error",
+  "code": "MACHINE_READABLE_CODE"
+}
+```
+
+### 400 — Validation Error
+
+Returned when a required field is missing, the wrong type, or fails a format constraint (e.g. `recipientAccountNo` is not 10 digits).
+
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "code": "VALIDATION_ERROR"
+}
+```
+
+### 401 — Authentication Error
+
+Returned when the `x-api-key` header is absent or does not match any wallet.
+
+```json
+{
+  "success": false,
+  "message": "API key is missing",
+  "code": "MISSING_API_KEY"
+}
+```
+
+```json
+{
+  "success": false,
+  "message": "Invalid API key",
+  "code": "INVALID_API_KEY"
+}
+```
+
+### 402 — Insufficient Funds
+
+Returned when authorization check 6 fails: the requested `amount` exceeds the wallet's current balance.
+
+```json
+{
+  "success": false,
+  "message": "Insufficient wallet balance",
+  "code": "INSUFFICIENT_FUNDS"
+}
+```
+
+### 403 — Authorization Denied
+
+Returned when authorization checks 1–5 fail. Each failure produces a distinct `code`.
+
+**Wallet is inactive (check 1):**
+
+```json
+{
+  "success": false,
+  "message": "Wallet is not active",
+  "code": "WALLET_INACTIVE"
+}
+```
+
+**Wallet has expired (check 2):**
+
+```json
+{
+  "success": false,
+  "message": "Wallet has expired",
+  "code": "WALLET_EXPIRED"
+}
+```
+
+**Per-transaction spend limit exceeded (check 3):**
+
+```json
+{
+  "success": false,
+  "message": "Amount exceeds wallet's per-transaction limit",
+  "code": "SPEND_LIMIT_PER_TX_EXCEEDED"
+}
+```
+
+**Period spend limit exceeded (check 4):**
+
+```json
+{
+  "success": false,
+  "message": "Amount would exceed wallet's period spend limit",
+  "code": "SPEND_LIMIT_PER_PERIOD_EXCEEDED"
+}
+```
+
+**Merchant not on allowlist (check 5):**
+
+```json
+{
+  "success": false,
+  "message": "Merchant is not on the wallet's allowlist",
+  "code": "MERCHANT_NOT_ALLOWED"
+}
+```
+
+<Note>
+  Blocked payment intents (authorization checks 1–6 fail) still create a **Transaction record** with `decision: "blocked"` and a `blockReason` matching the error code. These records appear in wallet transaction history and audit logs — every payment attempt is traceable regardless of outcome.
+</Note>
+
+## TypeScript Example
+
+```typescript
+const API_KEY = "ax_live_..."; // from wallet creation
+
+interface PaymentIntentRequest {
+  amount: number;
+  merchantName: string;
+  recipientAccountNo: string;
+  recipientBankCode: string;
+  reason?: string;
+}
+
+interface PaymentIntentResponse {
+  success: boolean;
+  data?: {
+    transaction: {
+      id: string;
+      walletId: string;
+      amount: number;
+      merchantName: string;
+      recipientAccountNo: string;
+      recipientBankCode: string;
+      decision: "approved" | "blocked";
+      reason: string | null;
+      blockReason: string | null;
+      createdAt: string;
+    };
+    settlement: {
+      reference: string;
+    };
+  };
+  message?: string;
+  code?: string;
+}
+
+async function createPaymentIntent(
+  payload: PaymentIntentRequest
+): Promise<PaymentIntentResponse> {
+  const response = await fetch("https://api.useaxis.dev/api/payment-intent", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data: PaymentIntentResponse = await response.json();
+
+  if (!response.ok) {
+    // Surface the machine-readable code for programmatic handling
+    throw new Error(
+      `Payment failed [${data.code ?? response.status}]: ${data.message}`
+    );
+  }
+
+  return data;
+}
+
+// Usage
+try {
+  const result = await createPaymentIntent({
+    amount: 500000, // ₦5,000 in kobo
+    merchantName: "Jumia Nigeria",
+    recipientAccountNo: "0123456789",
+    recipientBankCode: "058",
+    reason: "Monthly SaaS subscription",
+  });
+
+  console.log("Settlement reference:", result.data?.settlement.reference);
+} catch (err) {
+  console.error(err);
+}
+```

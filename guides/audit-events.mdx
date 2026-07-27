@@ -1,0 +1,138 @@
+---
+title: "Inspect authorization audit events per transaction"
+sidebarTitle: "Audit Events"
+description: "For every payment attempt, Axis records which authorization checks passed or failed. Use audit events to explain blocked transactions in your UI."
+---
+
+The Axis authorization engine runs up to **6 checks** on every payment intent before it reaches a decision. Each check produces an **AuditEvent** record — whether it passed or failed. This gives you a granular, per-rule audit trail behind every transaction decision, so you always know not just *that* a payment was blocked, but *which rule blocked it* and *why*.
+
+## Endpoint
+
+### `GET /api/audit-events`
+
+Retrieves audit events. Filter by `transactionId` to fetch all checks for a specific payment attempt.
+
+**Query parameters**
+
+| Parameter       | Type   | Description                                         |
+| --------------- | ------ | --------------------------------------------------- |
+| `transactionId` | string | Filter events to a specific transaction (recommended) |
+| `page`          | number | Page number (default `1`)                           |
+| `pageSize`      | number | Results per page (default `10`)                     |
+
+## AuditEvent fields
+
+| Field           | Type           | Description                                                                                         |
+| --------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| `id`            | string         | UUID uniquely identifying this audit event                                                          |
+| `transactionId` | string         | UUID of the transaction this event belongs to                                                       |
+| `ruleEvaluated` | string         | The name of the authorization rule that was checked (see rule names below)                          |
+| `passed`        | boolean        | `true` if the rule was satisfied, `false` if it caused a block                                      |
+| `detail`        | string \| null | Optional human-readable explanation — present when a rule fails or when extra context is useful     |
+| `createdAt`     | string         | ISO 8601 timestamp of when the check was recorded                                                   |
+
+### Authorization rule names
+
+The `ruleEvaluated` field will contain one of the following values:
+
+| Rule name              | What it checks                                                          |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `wallet_active`        | Whether the wallet is active and not suspended                          |
+| `spend_limit_per_tx`   | Whether the transaction amount is within the per-transaction spend limit |
+| `merchant_allowlist`   | Whether the merchant is on the wallet's approved merchant list          |
+| `balance_check`        | Whether the wallet has sufficient balance to cover the transaction      |
+| `daily_spend_limit`    | Whether the transaction would exceed the wallet's daily spend cap       |
+| `policy_check`         | Whether the transaction satisfies any additional agent policy rules     |
+
+## Example: audit events for a blocked transaction
+
+The following shows the audit events for a transaction that was blocked because the merchant was not on the allowlist. The first two rules passed; the third failed and halted further evaluation.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "ae-uuid-0001",
+      "transactionId": "tx-uuid-blocked-001",
+      "ruleEvaluated": "wallet_active",
+      "passed": true,
+      "detail": null,
+      "createdAt": "2026-07-21T14:22:01.000Z"
+    },
+    {
+      "id": "ae-uuid-0002",
+      "transactionId": "tx-uuid-blocked-001",
+      "ruleEvaluated": "spend_limit_per_tx",
+      "passed": true,
+      "detail": null,
+      "createdAt": "2026-07-21T14:22:01.001Z"
+    },
+    {
+      "id": "ae-uuid-0003",
+      "transactionId": "tx-uuid-blocked-001",
+      "ruleEvaluated": "merchant_allowlist",
+      "passed": false,
+      "detail": "Merchant 'AliExpress' is not in the wallet's approved merchant list.",
+      "createdAt": "2026-07-21T14:22:01.002Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10,
+    "totalCount": 3,
+    "totalPages": 1
+  }
+}
+```
+
+## Use case: explaining a blocked transaction in your UI
+
+When a transaction's `decision` is `"blocked"`, fetch its audit events to display a rule-by-rule breakdown to your users. This transforms an opaque block into a clear, actionable explanation.
+
+```tsx
+// Pseudocode — fetch audit events and render a rule checklist
+
+async function getAuditEvents(transactionId: string, apiKey: string) {
+  const res = await fetch(
+    `/api/audit-events?transactionId=${transactionId}`,
+    { headers: { Authorization: `Bearer ${apiKey}` } }
+  );
+  const json = await res.json();
+  return json.data; // AuditEvent[]
+}
+
+// In your blocked-transaction detail view:
+function BlockedTransactionDetail({ transaction, apiKey }) {
+  const [auditEvents, setAuditEvents] = useState([]);
+
+  useEffect(() => {
+    if (transaction.decision === "blocked") {
+      getAuditEvents(transaction.id, apiKey).then(setAuditEvents);
+    }
+  }, [transaction.id]);
+
+  return (
+    <div>
+      <h3>Why was this payment blocked?</h3>
+      <ul>
+        {auditEvents.map((event) => (
+          <li key={event.id} className={event.passed ? "text-green-600" : "text-red-600"}>
+            <span>{event.passed ? "✓" : "✗"}</span>
+            <strong>{event.ruleEvaluated}</strong>
+            {event.detail && <span> — {event.detail}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+This pattern renders a checklist of rules with green checkmarks for passing rules and a red cross with a human-readable explanation for the failing rule — giving developers and operators an instant, self-service explanation without needing to inspect server logs.
+
+<Note>
+  Audit events are **immutable**. Once recorded, they cannot be modified or deleted. This guarantees
+  that the authorization trail for every payment attempt is a permanent, tamper-proof record — useful
+  for compliance, debugging, and dispute resolution.
+</Note>

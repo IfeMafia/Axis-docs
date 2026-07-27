@@ -1,0 +1,42 @@
+---
+title: "POST /v1/auth/logout — end the current session"
+sidebarTitle: "POST /logout"
+description: "End a user session. Returns a success confirmation. Discard the JWT token on the client side after calling this endpoint."
+---
+
+Signal the end of the current session and receive a logout confirmation. Call this endpoint when a user explicitly signs out of your application, then immediately discard the JWT token from your client-side storage.
+
+## Endpoint
+
+```
+POST /v1/auth/logout
+```
+
+## Authentication
+
+None required. Axis uses stateless JWTs — there is no server-side session to invalidate.
+
+## Request Body
+
+None. No request body is expected.
+
+## Response — 200 OK
+
+<ResponseField name="status" type="string">
+  Always `"success"` for a successful response.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable confirmation that the logout was processed.
+</ResponseField>
+
+```json
+{
+  "status": "success",
+  "message": "Logged out successfully"
+}
+```
+
+<Note>
+  Axis issues stateless JWTs — the server does not maintain a session store, so there is nothing to invalidate server-side. **After calling this endpoint, you are responsible for removing the token from all client-side storage** (e.g. memory, `localStorage`, `sessionStorage`, or cookies). Any request made with the old token before it naturally expires will still succeed, so treat logout as a client-side operation first and foremost.
+</Note>

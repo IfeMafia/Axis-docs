@@ -1,0 +1,118 @@
+---
+title: "POST /api/webhooks — inbound Korapay funding events"
+sidebarTitle: "POST /webhooks"
+description: "Axis receives Korapay charge.success events at this endpoint to credit wallet balances after a virtual account receives a bank transfer."
+---
+
+This endpoint is called by **Korapay** (Axis's virtual account provider) whenever a bank transfer is received at a wallet's virtual account number. Axis processes the event and credits the corresponding wallet balance. **Your frontend does not call this endpoint** — it is invoked server-to-server by the payment provider.
+
+## Endpoint
+
+```
+POST /api/webhooks
+```
+
+## Authentication
+
+None. This is a provider-to-server callback — Korapay calls this endpoint directly. No `Authorization` header or `x-api-key` is required or expected.
+
+## Expected Payload
+
+Axis only processes events where `event` is `"charge.success"`. Any other event type is ignored.
+
+```json
+{
+  "event": "charge.success",
+  "data": {
+    "reference": "pay_ref_abc123",
+    "payment_reference": "korapay_ref_xyz",
+    "amount": 5000.00,
+    "fee": 50.00,
+    "currency": "NGN",
+    "payment_method": "bank_transfer",
+    "status": "success",
+    "narration": "Transfer from Acme Corp",
+    "transaction_date": "2026-07-21T09:30:00.000Z",
+    "payer_bank_account": {
+      "account_name": "Acme Corp",
+      "account_number": "0123456789",
+      "bank_name": "Access Bank",
+      "bank_code": "044"
+    },
+    "virtual_bank_account": {
+      "account_name": "Purchasing Agent v1",
+      "account_number": "9876543210",
+      "bank_name": "Providus Bank",
+      "account_reference": "wallet-uuid-here"
+    },
+    "customer": {
+      "name": "Acme Corp",
+      "email": "dev@acme.io"
+    }
+  }
+}
+```
+
+## Key Field Roles
+
+| Field | Role |
+|---|---|
+| `event` | Must be exactly `"charge.success"`. Any other value causes Axis to ignore the event. |
+| `data.virtual_bank_account.account_reference` | Used to identify which wallet to credit. This value is the wallet UUID, set when Axis provisions the virtual account from Korapay. |
+| `data.amount` | The funded amount in **NGN decimal** (e.g. `5000.00` = ₦5,000). Axis converts this to kobo internally before crediting the wallet. |
+| `data.currency` | Must be `"NGN"`. Validated to be exactly 3 characters. |
+| `data.reference` | Korapay's unique payment reference. Stored for reconciliation. |
+
+## Response
+
+```
+200 OK
+```
+
+Axis returns `200 OK` on successful processing. The Korapay webhook dispatcher treats any non-`2xx` response as a delivery failure and will retry.
+
+<Note>
+  Axis validates the incoming payload with a **strict Zod schema**. The key constraints are:
+
+  - `event` must be exactly the string `"charge.success"` — any other event type is rejected
+  - `data.currency` must be exactly 3 characters (validated as a string of length 3, not an enum)
+  - `data.amount` is a **decimal number**, not an integer — Korapay sends `5000.00`, not `500000`
+
+  Payloads that fail schema validation return a `400` response with Zod validation details. Korapay will retry delivery on `400`s, so ensure your virtual account provisioning flow always sets `account_reference` to the correct wallet UUID.
+</Note>
+
+## Payload Fields Reference
+
+The following fields are extracted and used by Axis when processing the event. Fields not listed here are accepted by the schema but not acted on.
+
+<ResponseField name="event" type="string">
+  The Korapay event type. Axis only processes `"charge.success"` — all other values are ignored without error.
+</ResponseField>
+
+<ResponseField name="data.virtual_bank_account.account_reference" type="string">
+  The wallet UUID to credit. Set by Axis when the virtual account is provisioned via Korapay. If no wallet with this UUID is found, the event is logged and no credit is applied.
+</ResponseField>
+
+<ResponseField name="data.amount" type="number">
+  The funded amount in NGN (decimal). Axis multiplies by 100 to convert to kobo before writing to the wallet balance.
+</ResponseField>
+
+<ResponseField name="data.currency" type="string">
+  Must be exactly 3 characters. Validated by schema — payloads with a missing or malformed `currency` field are rejected with `400`.
+</ResponseField>
+
+<ResponseField name="data.reference" type="string">
+  Korapay's unique payment reference for the transaction. Stored on the resulting ledger entry for reconciliation.
+</ResponseField>
+
+<ResponseField name="data.payment_reference" type="string">
+  Korapay's internal payment reference. Also stored for reconciliation.
+</ResponseField>
+
+<ResponseField name="data.narration" type="string">
+  The transfer narration submitted by the sending bank. Stored on the ledger entry and visible in the wallet's funding history.
+</ResponseField>
+
+<ResponseField name="data.transaction_date" type="string">
+  ISO 8601 timestamp of when the bank transfer was processed. Stored for audit purposes.
+</ResponseField>

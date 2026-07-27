@@ -1,0 +1,139 @@
+---
+title: "POST /v1/onboarding — register a business entity"
+sidebarTitle: "POST /onboarding"
+description: "Register a business to unlock wallet creation. Accepts businessName, contactEmail, and contactPhone. Returns a businessId for subsequent API calls."
+---
+
+Register a business entity under your Axis account to unlock wallet creation and agent payment infrastructure. You must complete this step before you can create wallets or fund autonomous agents. On success, Axis returns a `businessId` — keep it safe, as it is required for all wallet and agent operations.
+
+## Endpoints
+
+Both routes are equivalent and route to the same handler:
+
+```
+POST /v1/onboarding
+POST /api/onboarding
+```
+
+## Authentication
+
+A valid JWT session token is required. Pass it in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+Obtain a token by calling [POST /v1/auth/login](/api-reference/auth/login).
+
+## Request Body
+
+<ParamField body="businessName" type="string" required>
+  The legal or trading name of the business. Must be between 2 and 200 characters.
+</ParamField>
+
+<ParamField body="contactEmail" type="string" required>
+  A valid contact email address for the business.
+</ParamField>
+
+<ParamField body="contactPhone" type="string">
+  An optional contact phone number for the business. Recommended format: E.164 (e.g. `+2348012345678`).
+</ParamField>
+
+## Request Example
+
+```json
+{
+  "businessName": "Acme Corp",
+  "contactEmail": "dev@acme.io",
+  "contactPhone": "+2348012345678"
+}
+```
+
+## Response — 201 Created
+
+<ResponseField name="status" type="string">
+  Always `"success"` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The registered business record.
+
+  <Expandable title="data fields">
+    <ResponseField name="data.businessId" type="string">
+      Unique UUID identifying the registered business. **Store this value** — it is required for wallet creation and all subsequent business-scoped API calls.
+    </ResponseField>
+
+    <ResponseField name="data.name" type="string">
+      The business name as registered.
+    </ResponseField>
+
+    <ResponseField name="data.contactEmail" type="string">
+      The contact email address associated with the business.
+    </ResponseField>
+
+    <ResponseField name="data.contactPhone" type="string">
+      The contact phone number, if provided.
+    </ResponseField>
+
+    <ResponseField name="data.createdAt" type="string">
+      ISO 8601 timestamp of when the business was registered.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "status": "success",
+  "data": {
+    "businessId": "b1a2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Acme Corp",
+    "contactEmail": "dev@acme.io",
+    "contactPhone": "+2348012345678",
+    "createdAt": "2026-07-21T09:00:00.000Z"
+  }
+}
+```
+
+<Warning>
+  **Save the `businessId` immediately.** It is not re-displayed after this response and is required to create wallets and configure autonomous agents on your account. Store it in your environment variables or a secure configuration store.
+</Warning>
+
+## Error Responses
+
+### 400 — Validation Error
+
+Returned when one or more request fields fail validation.
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "code": "too_small",
+      "minimum": 2,
+      "type": "string",
+      "inclusive": true,
+      "exact": false,
+      "path": ["businessName"],
+      "message": "String must contain at least 2 character(s)"
+    },
+    {
+      "code": "invalid_string",
+      "validation": "email",
+      "path": ["contactEmail"],
+      "message": "Invalid email"
+    }
+  ]
+}
+```
+
+### 401 — Unauthorized
+
+Returned when the `Authorization` header is missing or the token is invalid or expired.
+
+```json
+{
+  "status": "error",
+  "message": "Unauthorized"
+}
+```

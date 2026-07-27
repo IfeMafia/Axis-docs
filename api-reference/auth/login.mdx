@@ -1,0 +1,121 @@
+---
+title: "POST /v1/auth/login — authenticate and receive a token"
+sidebarTitle: "POST /login"
+description: "Authenticate with email and password. Returns a JWT session token to use in the Authorization header for protected API calls."
+---
+
+Exchange a registered email and password for a signed JWT session token. Attach the returned token to every subsequent authenticated request via the `Authorization: Bearer <token>` header. Tokens are time-limited — when one expires, prompt the user to log in again to receive a fresh token.
+
+## Endpoint
+
+```
+POST /v1/auth/login
+```
+
+## Authentication
+
+None required. This is a public endpoint.
+
+## Request Body
+
+<ParamField body="email" type="string" required>
+  The email address associated with the Axis account.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The account password.
+</ParamField>
+
+## Request Example
+
+```json
+{
+  "email": "dev@acme.io",
+  "password": "sup3rS3cur3!"
+}
+```
+
+## Response — 200 OK
+
+<ResponseField name="status" type="string">
+  Always `"success"` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for the session token and authenticated user details.
+
+  <Expandable title="data fields">
+    <ResponseField name="data.token" type="string">
+      A signed JWT session token. Include this in the `Authorization: Bearer <token>` header for all authenticated requests.
+    </ResponseField>
+
+    <ResponseField name="data.user" type="object">
+      The authenticated user record.
+
+      <Expandable title="user fields">
+        <ResponseField name="data.user.id" type="string">
+          Unique UUID for the user account.
+        </ResponseField>
+
+        <ResponseField name="data.user.email" type="string">
+          The email address associated with the account.
+        </ResponseField>
+
+        <ResponseField name="data.user.accountType" type="string">
+          The account type: `"developer"` or `"business"`.
+        </ResponseField>
+
+        <ResponseField name="data.user.businessName" type="string">
+          Present when `accountType` is `"business"`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImU5YjFmMjAzLTQ4NzEtNGUwZS1hNmNkLTFkNzZkYmMxNjNmZiIsImVtYWlsIjoiZGV2QGFjbWUuaW8iLCJpYXQiOjE3NTMwODgwMDAsImV4cCI6MTc1MzE3NDQwMH0.dummysignature",
+    "user": {
+      "id": "e9b1f203-4871-4e0e-a6cd-1d76dbc163ff",
+      "email": "dev@acme.io",
+      "accountType": "business",
+      "businessName": "Acme Corp"
+    }
+  }
+}
+```
+
+## Error Responses
+
+### 400 — Validation Error
+
+Returned when a required field is missing or malformed.
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": ["password"],
+      "message": "Required"
+    }
+  ]
+}
+```
+
+### 401 — Invalid Credentials
+
+Returned when the email does not exist or the password is incorrect. The response is intentionally generic to avoid leaking whether an email address is registered.
+
+```json
+{
+  "status": "error",
+  "message": "Invalid email or password"
+}
+```

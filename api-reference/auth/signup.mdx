@@ -1,0 +1,142 @@
+---
+title: "POST /v1/auth/signup — create a new Axis account"
+sidebarTitle: "POST /signup"
+description: "Create a developer or business account. Returns a JWT session token used to authenticate subsequent requests from your frontend."
+---
+
+Use this endpoint to register a new Axis account. Choose `"developer"` to explore the API with personal credentials, or `"business"` to unlock wallet creation and agent payment infrastructure. A signed JWT session token is returned immediately on success — store it securely (e.g. in memory or an `httpOnly` cookie) and attach it to subsequent requests via the `Authorization` header.
+
+## Endpoint
+
+```
+POST /v1/auth/signup
+```
+
+## Authentication
+
+None required. This is a public endpoint.
+
+## Request Body
+
+<ParamField body="email" type="string" required>
+  A valid email address. Must be unique across all Axis accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The account password. Minimum 6 characters.
+</ParamField>
+
+<ParamField body="accountType" type="string" required>
+  The type of account to create. Accepted values: `"developer"` or `"business"`.
+</ParamField>
+
+<ParamField body="businessName" type="string">
+  The legal or trading name of the business. **Required when `accountType` is `"business"`.**
+</ParamField>
+
+## Request Example
+
+```json
+{
+  "email": "dev@acme.io",
+  "password": "sup3rS3cur3!",
+  "accountType": "business",
+  "businessName": "Acme Corp"
+}
+```
+
+## Response — 201 Created
+
+A successful request returns HTTP `201` with a JSON body containing a JWT session token and the newly created user record.
+
+<ResponseField name="status" type="string">
+  Always `"success"` for a successful response.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for the session token and user details.
+
+  <Expandable title="data fields">
+    <ResponseField name="data.token" type="string">
+      A signed JWT session token. Include this in the `Authorization: Bearer <token>` header for all authenticated requests.
+    </ResponseField>
+
+    <ResponseField name="data.user" type="object">
+      The newly created user record.
+
+      <Expandable title="user fields">
+        <ResponseField name="data.user.id" type="string">
+          Unique UUID for the user account.
+        </ResponseField>
+
+        <ResponseField name="data.user.email" type="string">
+          The email address associated with the account.
+        </ResponseField>
+
+        <ResponseField name="data.user.accountType" type="string">
+          The account type: `"developer"` or `"business"`.
+        </ResponseField>
+
+        <ResponseField name="data.user.businessName" type="string">
+          Present when `accountType` is `"business"`.
+        </ResponseField>
+
+        <ResponseField name="data.user.createdAt" type="string">
+          ISO 8601 timestamp of when the account was created.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImU5YjFmMjAzLTQ4NzEtNGUwZS1hNmNkLTFkNzZkYmMxNjNmZiIsImVtYWlsIjoiZGV2QGFjbWUuaW8iLCJpYXQiOjE3NTMwODgwMDAsImV4cCI6MTc1MzE3NDQwMH0.dummysignature",
+    "user": {
+      "id": "e9b1f203-4871-4e0e-a6cd-1d76dbc163ff",
+      "email": "dev@acme.io",
+      "accountType": "business",
+      "businessName": "Acme Corp",
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    }
+  }
+}
+```
+
+## Error Responses
+
+### 400 — Validation Error
+
+Returned when one or more request fields fail validation. The `errors` array contains individual Zod issue objects, each identifying the failing field and the reason.
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": ["email"],
+      "message": "Required"
+    },
+    {
+      "code": "too_small",
+      "minimum": 6,
+      "type": "string",
+      "inclusive": true,
+      "exact": false,
+      "path": ["password"],
+      "message": "String must contain at least 6 character(s)"
+    },
+    {
+      "code": "invalid_enum_value",
+      "options": ["developer", "business"],
+      "path": ["accountType"],
+      "message": "Invalid enum value. Expected 'developer' | 'business', received 'admin'"
+    }
+  ]
+}
+```

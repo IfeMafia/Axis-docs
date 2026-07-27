@@ -1,0 +1,167 @@
+---
+title: "Register your business on Axis"
+sidebarTitle: "Onboarding"
+description: "After signing up, register your business entity to unlock wallet creation and full API access. Takes a single POST request."
+---
+
+After creating a user account, the next step is to register a business entity with Axis. Wallets belong to a business — not directly to a user — so this registration step is required before you can create any wallets or issue API keys. You only need to do this once per business.
+
+<Note>
+  This endpoint is authenticated with a **session JWT**, not an API key. Make sure you have completed the sign-in flow and are forwarding the session cookie (or `Authorization` header) before calling this endpoint. See [Session authentication](/guides/session-auth) for details.
+</Note>
+
+## Register a business
+
+<CodeGroup>
+
+```http title="Endpoints"
+POST /v1/onboarding
+POST /api/onboarding
+```
+
+</CodeGroup>
+
+Both paths point to the same handler. Use whichever base URL your environment is configured for — see [Base URL and errors](/guides/base-url-and-errors).
+
+### Request body
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `businessName` | string | ✅ | Display name for your business. Must be between 2 and 200 characters. |
+| `contactEmail` | string | ✅ | Primary contact email address. Must be a valid email format. |
+| `contactPhone` | string | — | Contact phone number, including country code (e.g. `+2348012345678`). |
+
+### Example request
+
+```json title="POST /api/onboarding"
+{
+  "businessName": "Acme Corp",
+  "contactEmail": "dev@acme.io",
+  "contactPhone": "+2348012345678"
+}
+```
+
+### Example response
+
+```json title="201 Created"
+{
+  "status": "success",
+  "data": {
+    "businessId": "uuid",
+    "name": "Acme Corp",
+    "contactEmail": "dev@acme.io",
+    "contactPhone": "+2348012345678",
+    "createdAt": "2026-07-21T09:00:00.000Z"
+  }
+}
+```
+
+## Store the `businessId`
+
+The `businessId` returned in the response is required when creating wallets. Store it in your application state as soon as you receive it — you will pass it to every wallet creation request.
+
+Here is a complete TypeScript example that calls the onboarding endpoint from a React app and persists the `businessId`:
+
+```typescript title="src/lib/onboarding.ts"
+interface OnboardingPayload {
+  businessName: string;
+  contactEmail: string;
+  contactPhone?: string;
+}
+
+interface BusinessData {
+  businessId: string;
+  name: string;
+  contactEmail: string;
+  contactPhone?: string;
+  createdAt: string;
+}
+
+interface OnboardingResponse {
+  status: "success";
+  data: BusinessData;
+}
+
+/**
+ * Registers a business entity on Axis.
+ * Must be called after the user has signed in — the session cookie
+ * is forwarded automatically when `credentials: "include"` is set.
+ */
+export async function registerBusiness(
+  payload: OnboardingPayload
+): Promise<BusinessData> {
+  const response = await fetch("/api/onboarding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // forward the session JWT cookie
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.message ?? `Onboarding failed (${response.status})`);
+  }
+
+  const result: OnboardingResponse = await response.json();
+  return result.data;
+}
+```
+
+```typescript title="src/components/OnboardingForm.tsx"
+import { useState } from "react";
+import { registerBusiness } from "../lib/onboarding";
+
+export function OnboardingForm() {
+  const [businessId, setBusinessId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    const form = new FormData(e.currentTarget);
+
+    try {
+      const business = await registerBusiness({
+        businessName: form.get("businessName") as string,
+        contactEmail: form.get("contactEmail") as string,
+        contactPhone: (form.get("contactPhone") as string) || undefined,
+      });
+
+      // Persist businessId — pass this to every wallet creation request
+      setBusinessId(business.businessId);
+
+      // Optionally store in sessionStorage for use across components
+      sessionStorage.setItem("axis_business_id", business.businessId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (businessId) {
+    return (
+      <p>
+        Business registered. Your <code>businessId</code> is{" "}
+        <strong>{businessId}</strong>.
+      </p>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="businessName" placeholder="Business name" required />
+      <input name="contactEmail" type="email" placeholder="Contact email" required />
+      <input name="contactPhone" type="tel" placeholder="Phone (optional)" />
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      <button type="submit" disabled={loading}>
+        {loading ? "Registering…" : "Register business"}
+      </button>
+    </form>
+  );
+}
+```
+

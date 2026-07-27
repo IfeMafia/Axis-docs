@@ -1,0 +1,230 @@
+---
+title: "Fetch and display wallet transaction history"
+sidebarTitle: "Transactions"
+description: "Retrieve paginated transaction records for any wallet — both approved and blocked attempts — to display in your dashboard or agent activity log."
+---
+
+Every payment attempt — whether approved or blocked — creates a **Transaction** record in Axis. Retrieving these records in paginated form lets you build a real-time transaction feed, an agent activity log, or a full audit history directly in your UI.
+
+## Transaction history endpoints
+
+Axis exposes two endpoints for querying transaction history depending on your API version.
+
+### `GET /api/wallets/:walletId/transactions`
+
+Returns a paginated list of transactions for a specific wallet, sorted newest first.
+
+**Query parameters**
+
+| Parameter  | Type   | Default | Description                        |
+| ---------- | ------ | ------- | ---------------------------------- |
+| `page`     | number | `1`     | The page number to retrieve        |
+| `pageSize` | number | `10`    | Number of transactions per page    |
+
+**Example response**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "walletId": "uuid",
+      "amount": 500000,
+      "merchantName": "Jumia Nigeria",
+      "recipientAccountNo": "0123456789",
+      "recipientBankCode": "058",
+      "decision": "approved",
+      "reason": "Monthly subscription",
+      "blockReason": null,
+      "createdAt": "2026-07-21T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10,
+    "totalCount": 42,
+    "totalPages": 5
+  }
+}
+```
+
+The response wraps results in a `data` array alongside a `pagination` object so your UI can render page controls directly from the response without any client-side math.
+
+### `GET /v1/wallets/:id/transactions`
+
+Returns the most recent transactions for a wallet. Use the `limit` query parameter to control how many records are returned.
+
+**Query parameters**
+
+| Parameter | Type   | Default | Description                              |
+| --------- | ------ | ------- | ---------------------------------------- |
+| `limit`   | number | `20`    | Maximum number of transactions to return |
+
+## Transaction fields
+
+| Field                | Type     | Description                                                                              |
+| -------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `id`                 | string   | UUID uniquely identifying this transaction                                               |
+| `walletId`           | string   | UUID of the wallet that initiated the payment attempt                                    |
+| `amount`             | number   | Payment amount in **kobo** — divide by 100 to display in naira                          |
+| `merchantName`       | string   | Name of the merchant or payee                                                            |
+| `recipientAccountNo` | string   | Destination account number                                                               |
+| `recipientBankCode`  | string   | Bank code for the recipient's institution                                                |
+| `decision`           | string   | `"approved"` or `"blocked"` — the outcome of the authorization engine                   |
+| `reason`             | string   | The reason provided by the agent when initiating the payment                             |
+| `blockReason`        | string \| null | Human-readable explanation of why the payment was blocked; `null` when approved   |
+| `createdAt`          | string   | ISO 8601 timestamp of when the attempt was recorded                                      |
+
+### Key fields to highlight in your UI
+
+- **`decision`** — use this to visually distinguish approved from blocked attempts (green vs red, checkmark vs warning icon).
+- **`blockReason`** — only populated when `decision` is `"blocked"`. Surface this string directly in your UI so developers and operators can understand what stopped a payment.
+- **`amount`** — always stored in kobo. Convert to naira for display: `amount / 100`.
+
+<Tip>
+  Displaying `blockReason` in your transaction list is one of the fastest ways to give developers
+  visibility into why an agent payment was denied — no log-digging required. For a deeper
+  rule-by-rule breakdown, see [Audit Events](/guides/audit-events).
+</Tip>
+
+## React example: paginated transaction list
+
+The component below fetches transactions from `/api/wallets/:walletId/transactions`, renders approved and blocked entries with distinct colors, and provides previous/next pagination controls.
+
+```tsx
+import { useEffect, useState } from "react";
+
+interface Transaction {
+  id: string;
+  walletId: string;
+  amount: number;
+  merchantName: string;
+  recipientAccountNo: string;
+  recipientBankCode: string;
+  decision: "approved" | "blocked";
+  reason: string;
+  blockReason: string | null;
+  createdAt: string;
+}
+
+interface Pagination {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+interface TransactionsResponse {
+  success: boolean;
+  data: Transaction[];
+  pagination: Pagination;
+}
+
+interface TransactionListProps {
+  walletId: string;
+  apiKey: string;
+}
+
+export function TransactionList({ walletId, apiKey }: TransactionListProps) {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/wallets/${walletId}/transactions?page=${page}&pageSize=10`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json: TransactionsResponse = await res.json();
+        setTransactions(json.data);
+        setPagination(json.pagination);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load transactions");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, [walletId, apiKey, page]);
+
+  if (loading) return <p className="text-gray-500">Loading transactions…</p>;
+  if (error)   return <p className="text-red-500">Error: {error}</p>;
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-lg font-semibold">Transaction History</h2>
+
+      <ul className="divide-y divide-gray-200 rounded border border-gray-200">
+        {transactions.map((tx) => (
+          <li
+            key={tx.id}
+            className={`flex items-start justify-between p-4 ${
+              tx.decision === "approved" ? "bg-green-50" : "bg-red-50"
+            }`}
+          >
+            <div>
+              <p className="font-medium text-gray-900">{tx.merchantName}</p>
+              <p className="text-sm text-gray-500">
+                {new Date(tx.createdAt).toLocaleString()}
+              </p>
+              {tx.decision === "blocked" && tx.blockReason && (
+                <p className="mt-1 text-sm text-red-600">
+                  Blocked: {tx.blockReason}
+                </p>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-gray-900">
+                ₦{(tx.amount / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+              </p>
+              <span
+                className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                  tx.decision === "approved"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+              >
+                {tx.decision}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {pagination && (
+        <div className="flex items-center justify-between pt-2 text-sm text-gray-600">
+          <span>
+            Page {pagination.page} of {pagination.totalPages} &mdash;{" "}
+            {pagination.totalCount} total
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={pagination.page === 1}
+              className="rounded border px-3 py-1 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+              disabled={pagination.page === pagination.totalPages}
+              className="rounded border px-3 py-1 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```

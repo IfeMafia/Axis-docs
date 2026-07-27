@@ -1,0 +1,192 @@
+---
+title: "GET /api/wallets/:walletId — fetch a single wallet"
+sidebarTitle: "GET /wallets/:id"
+description: "Retrieve a wallet by ID including its virtual account details, API key prefixes, and associated merchants. Useful for displaying wallet configuration."
+---
+
+Fetch the full configuration of a single wallet by its ID. This endpoint returns the wallet's
+spend controls, expiry, virtual account details, and any API keys associated with it. Note that
+API key `fullKey` values are **never** returned here — only the `prefix` is included so you can
+identify which key is which without exposing secrets.
+
+## Endpoint
+
+```
+GET /api/wallets/:walletId
+```
+
+## Authentication
+
+Requires a valid **Session JWT** in the `Authorization` header.
+
+```
+Authorization: Bearer <session_jwt>
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="walletId" type="string" required>
+  The UUID of the wallet to retrieve. Returned as `wallet.id` when the wallet was created.
+</ParamField>
+
+---
+
+## Response `200 OK`
+
+<ResponseField name="id" type="string">
+  Unique wallet UUID.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable wallet label.
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  UUID of the user who owns this wallet.
+</ResponseField>
+
+<ResponseField name="spendLimitPerTx" type="integer">
+  Per-transaction spend cap, in kobo.
+</ResponseField>
+
+<ResponseField name="spendLimitPeriod" type="integer">
+  Rolling-period cumulative spend cap, in kobo.
+</ResponseField>
+
+<ResponseField name="periodWindowDays" type="integer">
+  Length of the rolling spend window, in days.
+</ResponseField>
+
+<ResponseField name="expiry" type="string">
+  ISO 8601 datetime at which the wallet deactivates.
+</ResponseField>
+
+<ResponseField name="useAllowlist" type="boolean">
+  Whether merchant-allowlist enforcement is active for this wallet.
+</ResponseField>
+
+<ResponseField name="merchantAllowlist" type="string[]">
+  List of permitted merchant names. Empty array when `useAllowlist` is `false`.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of wallet creation.
+</ResponseField>
+
+<ResponseField name="virtualAccount" type="object">
+  The virtual bank account linked to this wallet.
+
+  <Expandable title="virtualAccount fields">
+    <ResponseField name="virtualAccount.id" type="string">
+      Virtual account UUID.
+    </ResponseField>
+    <ResponseField name="virtualAccount.accountNumber" type="string">
+      10-digit Nigerian bank account number.
+    </ResponseField>
+    <ResponseField name="virtualAccount.bankName" type="string">
+      Issuing bank name.
+    </ResponseField>
+    <ResponseField name="virtualAccount.accountName" type="string">
+      Account name as displayed on transfers.
+    </ResponseField>
+    <ResponseField name="virtualAccount.balance" type="integer">
+      Current balance, in kobo.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="apiKeys" type="object[]">
+  All API keys associated with this wallet. Only `prefix` is returned — `fullKey` is never
+  exposed after initial creation.
+
+  <Expandable title="apiKey fields">
+    <ResponseField name="apiKeys[].id" type="string">
+      API key UUID.
+    </ResponseField>
+    <ResponseField name="apiKeys[].prefix" type="string">
+      First 8 characters of the key, safe to display in your UI.
+    </ResponseField>
+    <ResponseField name="apiKeys[].createdAt" type="string">
+      ISO 8601 timestamp of when this key was issued.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="merchants" type="object[]">
+  Merchant records that have been associated with this wallet through transactions.
+
+  <Expandable title="merchant fields">
+    <ResponseField name="merchants[].id" type="string">
+      Internal merchant UUID.
+    </ResponseField>
+    <ResponseField name="merchants[].name" type="string">
+      Merchant name as reported at the point of authorisation.
+    </ResponseField>
+    <ResponseField name="merchants[].category" type="string">
+      Merchant category code (MCC) description, when available.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "id": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+  "name": "Procurement Agent — Q3 2025",
+  "userId": "usr_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "spendLimitPerTx": 500000,
+  "spendLimitPeriod": 5000000,
+  "periodWindowDays": 30,
+  "expiry": "2026-01-31T23:59:59Z",
+  "useAllowlist": true,
+  "merchantAllowlist": ["AWS", "Vercel", "Stripe"],
+  "createdAt": "2025-07-15T09:41:02Z",
+  "virtualAccount": {
+    "id": "vac_11223344-5566-7788-99aa-bbccddeeff00",
+    "accountNumber": "0123456789",
+    "bankName": "Wema Bank",
+    "accountName": "AXIS/PROCUREMENT-AGENT-Q3",
+    "balance": 1250000
+  },
+  "apiKeys": [
+    {
+      "id": "key_aabbccdd-eeff-0011-2233-445566778899",
+      "prefix": "ax_live_",
+      "createdAt": "2025-07-15T09:41:02Z"
+    }
+  ],
+  "merchants": [
+    {
+      "id": "mrc_99887766-5544-3322-1100-ffeeddccbbaa",
+      "name": "AWS",
+      "category": "Computer Programming, Data Processing"
+    },
+    {
+      "id": "mrc_aabbccdd-1122-3344-5566-778899aabbcc",
+      "name": "Vercel",
+      "category": "Computer Programming, Data Processing"
+    }
+  ]
+}
+```
+
+---
+
+## Error Responses
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `401` | `UNAUTHORIZED` | Missing or invalid Session JWT. |
+| `404` | `WALLET_NOT_FOUND` | No wallet exists with the supplied `walletId`. |
+
+```json
+{
+  "error": {
+    "code": "WALLET_NOT_FOUND",
+    "message": "No wallet found with ID wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321."
+  }
+}
+```

@@ -1,0 +1,168 @@
+---
+title: "Send payments with Axis payment intents"
+sidebarTitle: "Payment Intents"
+description: "POST /api/payment-intent to debit a wallet and settle to a recipient. The authorization engine checks limits, expiry, allowlist, and balance before any money moves."
+---
+
+A **Payment Intent** is the primary spending action in Axis. Your agent calls this endpoint with the amount and recipient details — Axis runs its authorization engine and either **approves** (debits the wallet, queues settlement) or **blocks** (records the attempt for audit, returns a `403`). No money moves until every authorization check passes.
+
+## Authorization checks
+
+Axis evaluates these checks in order. All must pass before a payment is approved.
+
+1. Wallet status is `ACTIVE`
+2. Wallet has not expired (`expiresAt` is in the future, or not set)
+3. `amount` ≤ wallet's per-transaction limit
+4. Cumulative spend in the rolling period window + `amount` ≤ period limit
+5. If the wallet uses an allowlist: `merchantName` must appear in the allowlist
+6. Wallet balance ≥ `amount`
+
+If any check fails, the payment is blocked immediately and the remaining checks are not evaluated.
+
+## POST /api/payment-intent
+
+Requires an `x-api-key` header. See [API key authentication](/guides/api-key-auth) for how to obtain and pass your key.
+
+### Request body
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `amount` | integer | ✅ | Amount in **kobo** (smallest NGN unit). Must be `> 0`. |
+| `merchantName` | string | ✅ | Name of the merchant or payee. Minimum 3 characters. |
+| `recipientAccountNo` | string | ✅ | Recipient's bank account number. Exactly 10 digits. |
+| `recipientBankCode` | string | ✅ | NIP bank code for the recipient's bank. Exactly 3 digits (e.g. `"058"` for GTBank). |
+| `reason` | string | ❌ | Human-readable description of the payment. Max 200 characters. |
+
+### Approved response — `200 OK`
+
+```json
+// Request
+{
+  "amount": 500000,
+  "merchantName": "Jumia Nigeria",
+  "recipientAccountNo": "0123456789",
+  "recipientBankCode": "058",
+  "reason": "Order #ORD-9921 payment"
+}
+
+// Response
+{
+  "success": true,
+  "data": {
+    "transaction": {
+      "id": "uuid",
+      "walletId": "uuid",
+      "amount": 500000,
+      "merchantName": "Jumia Nigeria",
+      "recipientAccountNo": "0123456789",
+      "recipientBankCode": "058",
+      "decision": "approved",
+      "createdAt": "2026-07-21T10:00:00.000Z"
+    },
+    "settlement": {
+      "reference": "mock-ref-abc123"
+    }
+  }
+}
+```
+
+### Blocked response — `403 Forbidden`
+
+```json
+{
+  "success": false,
+  "error": {
+    "errorCode": "SPEND_LIMIT_PER_TX_EXCEEDED",
+    "message": "Transaction amount exceeds the per-transaction limit for this wallet."
+  }
+}
+```
+
+Common `errorCode` values include `WALLET_INACTIVE`, `WALLET_EXPIRED`, `SPEND_LIMIT_PER_TX_EXCEEDED`, `SPEND_LIMIT_PERIOD_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, and `INSUFFICIENT_BALANCE`.
+
+## Blocked transactions are still recorded
+
+A blocked attempt is never silently discarded. Axis creates a `Transaction` record with `decision: "blocked"` and a `blockReason` field explaining which check failed. This is intentional — the audit trail is complete regardless of outcome, so you can always inspect why a payment was denied.
+
+## TypeScript example — calling from an AI agent tool
+
+The snippet below shows how to wrap the endpoint as a tool function in an AI agent. Handle both the approved and blocked paths explicitly so your agent can react appropriately.
+
+```typescript
+import axios, { isAxiosError } from "axios";
+
+interface PaymentIntentParams {
+  amount: number;          // in kobo
+  merchantName: string;
+  recipientAccountNo: string;
+  recipientBankCode: string;
+  reason?: string;
+}
+
+interface PaymentIntentResult {
+  approved: boolean;
+  transactionId?: string;
+  settlementReference?: string;
+  errorCode?: string;
+  message?: string;
+}
+
+async function sendPayment(
+  params: PaymentIntentParams,
+  apiKey: string
+): Promise<PaymentIntentResult> {
+  try {
+    const response = await axios.post(
+      "https://your-axis-instance.com/api/payment-intent",
+      params,
+      {
+        headers: {
+          "x-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const { transaction, settlement } = response.data.data;
+
+    return {
+      approved: true,
+      transactionId: transaction.id,
+      settlementReference: settlement.reference,
+    };
+  } catch (err) {
+    if (isAxiosError(err) && err.response?.status === 403) {
+      // Authorization engine blocked the payment — still recorded for audit
+      const { errorCode, message } = err.response.data.error;
+      console.warn(`Payment blocked [${errorCode}]: ${message}`);
+      return { approved: false, errorCode, message };
+    }
+
+    // Unexpected error — rethrow so the agent can retry or escalate
+    throw err;
+  }
+}
+
+// Usage inside an agent tool
+const result = await sendPayment(
+  {
+    amount: 500000,          // ₦5,000.00
+    merchantName: "Jumia Nigeria",
+    recipientAccountNo: "0123456789",
+    recipientBankCode: "058",
+    reason: "Order #ORD-9921 payment",
+  },
+  process.env.AXIS_API_KEY!
+);
+
+if (result.approved) {
+  console.log("Payment approved. Settlement ref:", result.settlementReference);
+} else {
+  console.log("Payment blocked:", result.errorCode, result.message);
+  // Agent can decide to try a different wallet, reduce amount, or escalate
+}
+```
+
+<Note>
+  See [API key authentication](/guides/api-key-auth) for how to create and pass your `x-api-key` header.
+</Note>

@@ -1,0 +1,220 @@
+---
+title: "GET /v1/wallets/:id/stats — wallet spending summary"
+sidebarTitle: "GET /stats"
+description: "Returns aggregated wallet statistics: current balance, total spend, transaction counts. Also see GET /v1/wallets/:id/transactions for a recent activity list."
+---
+
+Two lightweight read endpoints for building live agent dashboards. Poll `/stats` to show a
+real-time snapshot of the wallet's balance and spending behaviour, and `/transactions` when you
+need a compact recent-activity feed alongside it.
+
+## Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/v1/wallets/:id/stats` | Aggregated spending statistics for the wallet |
+| `GET` | `/v1/wallets/:id/transactions` | Recent transactions, newest first |
+
+## Authentication
+
+Both endpoints require a valid **Session JWT** in the `Authorization` header.
+
+```
+Authorization: Bearer <session_jwt>
+```
+
+---
+
+## GET /v1/wallets/:id/stats
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  The UUID of the wallet to summarise.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="walletId" type="string">
+  The wallet UUID this summary belongs to.
+</ResponseField>
+
+<ResponseField name="balance" type="integer">
+  Current available balance in **kobo**. This is the live spendable balance after all approved
+  debits and top-ups have been applied.
+</ResponseField>
+
+<ResponseField name="totalAmountSpent" type="integer">
+  Cumulative total of all approved debits, in **kobo**, since the wallet was created.
+</ResponseField>
+
+<ResponseField name="periodAmountSpent" type="integer">
+  Total amount spent within the current rolling `periodWindowDays` window, in **kobo**. Compare
+  against `spendLimitPeriod` to show a spend-budget progress bar.
+</ResponseField>
+
+<ResponseField name="approvedCount" type="integer">
+  Total number of approved transactions since wallet creation.
+</ResponseField>
+
+<ResponseField name="blockedCount" type="integer">
+  Total number of blocked authorisation attempts since wallet creation.
+</ResponseField>
+
+<ResponseField name="spendLimitPerTx" type="integer">
+  Per-transaction spend cap, in kobo. Included for convenience so dashboards can display limits
+  without a separate wallet-fetch call.
+</ResponseField>
+
+<ResponseField name="spendLimitPeriod" type="integer">
+  Rolling-period spend cap, in kobo.
+</ResponseField>
+
+<ResponseField name="periodWindowDays" type="integer">
+  Rolling window length in days.
+</ResponseField>
+
+<ResponseField name="generatedAt" type="string">
+  ISO 8601 timestamp of when this stats snapshot was computed.
+</ResponseField>
+
+#### Example Response
+
+```json
+{
+  "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+  "balance": 1595000,
+  "totalAmountSpent": 4325000,
+  "periodAmountSpent": 1035000,
+  "approvedCount": 18,
+  "blockedCount": 3,
+  "spendLimitPerTx": 500000,
+  "spendLimitPeriod": 5000000,
+  "periodWindowDays": 30,
+  "generatedAt": "2025-07-15T14:00:00Z"
+}
+```
+
+---
+
+## GET /v1/wallets/:id/transactions
+
+A trimmed-down version of the full transactions endpoint, optimised for dashboard widgets.
+Returns only the most recent `N` transactions — no deep pagination required.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  The UUID of the wallet.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum number of recent transactions to return. Capped at `100`.
+</ParamField>
+
+### Response `200 OK`
+
+<ResponseField name="walletId" type="string">
+  The wallet UUID.
+</ResponseField>
+
+<ResponseField name="transactions" type="object[]">
+  Array of the most recent transaction records, newest-first.
+
+  <Expandable title="transaction fields">
+    <ResponseField name="transactions[].id" type="string">
+      Unique transaction UUID.
+    </ResponseField>
+    <ResponseField name="transactions[].amount" type="integer">
+      Transaction amount in kobo.
+    </ResponseField>
+    <ResponseField name="transactions[].currency" type="string">
+      ISO 4217 currency code. Currently always `"NGN"`.
+    </ResponseField>
+    <ResponseField name="transactions[].merchantName" type="string">
+      Merchant name at the point of authorisation.
+    </ResponseField>
+    <ResponseField name="transactions[].decision" type="string">
+      `"approved"` or `"blocked"`.
+    </ResponseField>
+    <ResponseField name="transactions[].blockReason" type="string | null">
+      Reason for blocking, or `null` if approved.
+    </ResponseField>
+    <ResponseField name="transactions[].reference" type="string">
+      Payment reference string.
+    </ResponseField>
+    <ResponseField name="transactions[].createdAt" type="string">
+      ISO 8601 timestamp of the authorisation attempt.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example Response
+
+```json
+{
+  "walletId": "wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321",
+  "transactions": [
+    {
+      "id": "txn_d4e5f6a7-b8c9-4012-8def-012345678901",
+      "amount": 345000,
+      "currency": "NGN",
+      "merchantName": "AWS",
+      "decision": "approved",
+      "blockReason": null,
+      "reference": "AXS-20250715-0041",
+      "createdAt": "2025-07-15T11:03:44Z"
+    },
+    {
+      "id": "txn_e5f6a7b8-c9d0-4123-9ef0-123456789012",
+      "amount": 750000,
+      "currency": "NGN",
+      "merchantName": "Rackspace",
+      "decision": "blocked",
+      "blockReason": "merchant_not_in_allowlist",
+      "reference": "AXS-20250715-0039",
+      "createdAt": "2025-07-15T10:58:17Z"
+    },
+    {
+      "id": "txn_c3d4e5f6-a7b8-4901-8cde-f90123456789",
+      "amount": 120000,
+      "currency": "NGN",
+      "merchantName": "Vercel",
+      "decision": "approved",
+      "blockReason": null,
+      "reference": "AXS-20250714-0037",
+      "createdAt": "2025-07-14T16:45:22Z"
+    }
+  ]
+}
+```
+
+<Tip>
+  **Best endpoint for a live dashboard.** Poll `GET /v1/wallets/:id/stats` every **1–2 seconds**
+  to keep balance, spend totals, and transaction counts up to date without over-fetching. Pair
+  it with a single call to `/transactions?limit=5` on page load for the recent-activity feed,
+  then refresh it on a slower interval (every 10–30 seconds) — transaction lists change less
+  frequently than the balance.
+</Tip>
+
+---
+
+## Error Responses
+
+Both endpoints return the same error shapes:
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `401` | `UNAUTHORIZED` | Missing or invalid Session JWT. |
+| `404` | `WALLET_NOT_FOUND` | No wallet exists with the supplied `:id`. |
+
+```json
+{
+  "error": {
+    "code": "WALLET_NOT_FOUND",
+    "message": "No wallet found with ID wlt_f7e6d5c4-b3a2-4190-8fed-cba987654321."
+  }
+}
+```

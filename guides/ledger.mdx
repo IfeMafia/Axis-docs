@@ -1,0 +1,189 @@
+---
+title: "Query the Axis ledger for wallet balance history"
+sidebarTitle: "Ledger"
+description: "The Axis ledger is an append-only record of every balance change. Each entry shows type (topup, debit, refund), amount, and running balance."
+---
+
+The ledger is the source of truth for a wallet's balance. Every balance change — whether a top-up, a debit, or a refund — is written as an **immutable ledger entry**. The wallet's current balance always equals the sum of all its ledger entries, which means you can reconstruct the complete balance history at any point in time purely from ledger data, without ever needing to read the wallet's `balance` field directly.
+
+## Ledger endpoints
+
+### `GET /api/wallets/:walletId/ledgers`
+
+Returns paginated ledger entries for a single wallet. Use this endpoint when you want to show a wallet's balance history in your UI or reconcile its activity.
+
+**Query parameters**
+
+| Parameter  | Type   | Default | Description                     |
+| ---------- | ------ | ------- | ------------------------------- |
+| `page`     | number | `1`     | The page number to retrieve     |
+| `pageSize` | number | `10`    | Number of entries per page      |
+
+### `GET /api/ledger`
+
+Returns the global ledger — entries across **all wallets**. Useful for platform-wide reconciliation or building an admin view of all balance changes.
+
+This endpoint accepts the same `page` and `pageSize` query parameters as the per-wallet endpoint.
+
+## LedgerEntry fields
+
+| Field           | Type          | Description                                                                                      |
+| --------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `id`            | string        | UUID uniquely identifying this ledger entry                                                      |
+| `walletId`      | string        | UUID of the wallet this entry belongs to                                                         |
+| `type`          | string        | `"topup"`, `"debit"`, or `"refund"` — the kind of balance change                                |
+| `amount`        | number        | Amount of the change in **kobo** — always positive; the `type` indicates direction               |
+| `balanceAfter`  | number        | Wallet balance in kobo immediately after this entry was applied                                  |
+| `transactionId` | string \| null | UUID of the linked transaction, if this entry was created by a payment attempt                  |
+| `reference`     | string \| null | Optional external reference string (e.g. a top-up provider reference)                           |
+| `createdAt`     | string        | ISO 8601 timestamp of when the entry was recorded                                                |
+
+### Why `balanceAfter` matters
+
+`balanceAfter` lets you reconstruct the wallet's full balance timeline from the ledger alone. Each entry is a snapshot: take any entry and you instantly know the balance at that moment in history. This is useful for:
+
+- Auditing what a wallet's balance was at a specific time
+- Building a balance chart over time without a separate time-series store
+- Verifying that the current `balance` on the wallet object matches the latest ledger entry's `balanceAfter`
+
+## Example response
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "b3f1c2d4-0001-4e5a-9abc-111111111111",
+      "walletId": "a1b2c3d4-0000-4e5a-9abc-000000000000",
+      "type": "topup",
+      "amount": 5000000,
+      "balanceAfter": 5000000,
+      "transactionId": null,
+      "reference": "TOPUP-REF-001",
+      "createdAt": "2026-07-20T08:00:00.000Z"
+    },
+    {
+      "id": "b3f1c2d4-0002-4e5a-9abc-222222222222",
+      "walletId": "a1b2c3d4-0000-4e5a-9abc-000000000000",
+      "type": "debit",
+      "amount": 500000,
+      "balanceAfter": 4500000,
+      "transactionId": "tx-uuid-0001",
+      "reference": null,
+      "createdAt": "2026-07-21T10:00:00.000Z"
+    },
+    {
+      "id": "b3f1c2d4-0003-4e5a-9abc-333333333333",
+      "walletId": "a1b2c3d4-0000-4e5a-9abc-000000000000",
+      "type": "refund",
+      "amount": 500000,
+      "balanceAfter": 5000000,
+      "transactionId": "tx-uuid-0001",
+      "reference": null,
+      "createdAt": "2026-07-21T11:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 10,
+    "totalCount": 3,
+    "totalPages": 1
+  }
+}
+```
+
+The three entries above tell a clear story: the wallet was topped up with ₦50,000, then debited ₦5,000 for a transaction, and finally refunded the same ₦5,000 — arriving back at its original balance.
+
+## TypeScript example: fetching ledger entries with pagination
+
+```typescript
+interface LedgerEntry {
+  id: string;
+  walletId: string;
+  type: "topup" | "debit" | "refund";
+  amount: number;
+  balanceAfter: number;
+  transactionId: string | null;
+  reference: string | null;
+  createdAt: string;
+}
+
+interface LedgerResponse {
+  success: boolean;
+  data: LedgerEntry[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+  };
+}
+
+async function fetchLedger(
+  walletId: string,
+  apiKey: string,
+  page = 1,
+  pageSize = 20
+): Promise<LedgerResponse> {
+  const url = new URL(
+    `/api/wallets/${walletId}/ledgers`,
+    "https://api.useaxis.dev"
+  );
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("pageSize", String(pageSize));
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Ledger fetch failed: HTTP ${res.status}`);
+  }
+
+  return res.json() as Promise<LedgerResponse>;
+}
+
+// --- Usage ---
+
+const ledger = await fetchLedger("wallet-uuid", process.env.AXIS_API_KEY!, 1, 20);
+
+// Print a balance timeline
+for (const entry of ledger.data) {
+  const naira = (entry.balanceAfter / 100).toLocaleString("en-NG", {
+    style: "currency",
+    currency: "NGN",
+  });
+  const change = entry.type === "debit" ? "-" : "+";
+  const amount = (entry.amount / 100).toFixed(2);
+  console.log(
+    `[${entry.createdAt}] ${entry.type.toUpperCase()} ${change}₦${amount} → balance: ${naira}`
+  );
+}
+
+// Verify the current wallet balance matches the latest ledger entry
+const latestEntry = ledger.data[0];
+console.log(`Most recent balance: ₦${(latestEntry.balanceAfter / 100).toFixed(2)}`);
+```
+
+### Fetching the global ledger
+
+To query across all wallets, swap the endpoint for `/api/ledger`. The response shape is identical:
+
+```typescript
+async function fetchGlobalLedger(
+  apiKey: string,
+  page = 1,
+  pageSize = 50
+): Promise<LedgerResponse> {
+  const url = new URL("/api/ledger", "https://api.useaxis.dev");
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("pageSize", String(pageSize));
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) throw new Error(`Global ledger fetch failed: HTTP ${res.status}`);
+  return res.json() as Promise<LedgerResponse>;
+}
+```

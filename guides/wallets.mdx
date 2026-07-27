@@ -1,0 +1,386 @@
+---
+title: "Create and manage Axis wallets for your AI agents"
+sidebarTitle: "Wallets"
+description: "A wallet is a scoped spending account tied to one AI agent. Set per-transaction limits, period caps, expiry, and optional merchant allowlists at creation time."
+---
+
+A **Wallet** is the core primitive in Axis. Every AI agent you deploy gets its own wallet — a scoped spending account that constrains exactly how much the agent can spend, over what time window, with which merchants, and until when. You define all of these rules at creation time. **Wallet rules cannot be changed after creation**, so configure them carefully before issuing the wallet to an agent.
+
+<Note>
+  All monetary amounts — `spendLimitPerTx`, `spendLimitPeriod`, and any balance values — are **integers in kobo**, the smallest unit of the Nigerian Naira. ₦1 = 100 kobo. For example, a ₦5,000 transaction limit is represented as `500000`.
+</Note>
+
+---
+
+## Create a wallet
+
+```http
+POST /api/wallets
+```
+
+### Request body
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | ✅ | Human-readable label for this wallet, e.g. `"Purchasing Agent v1"`. |
+| `userId` | string | ✅ | The user ID returned during signup. Links the wallet to the owning user account. |
+| `spendLimitPerTx` | integer | ✅ | Maximum spend allowed in a single transaction, **in kobo**. Must be ≤ `spendLimitPeriod`. |
+| `spendLimitPeriod` | integer | ✅ | Maximum cumulative spend within the rolling period window, **in kobo**. |
+| `periodWindowDays` | integer | ✅ | Length of the rolling spend window in days. Defaults to `30`. |
+| `expiry` | string | ✅ | ISO 8601 datetime at which the wallet becomes inactive, e.g. `"2027-01-01T00:00:00.000Z"`. Must be a future timestamp. |
+| `useAllowlist` | boolean | — | When `true`, the wallet can only make payments to merchants in `merchantAllowlist`. Defaults to `false`. |
+| `merchantAllowlist` | string[] | Conditional | Required when `useAllowlist` is `true`. List of merchant names the agent is permitted to pay. Must contain at least one entry. |
+
+### Validation rules
+
+Keep these constraints in mind when building your wallet creation form:
+
+- `spendLimitPerTx` must be **less than or equal to** `spendLimitPeriod`.
+- `expiry` must be a **future** datetime. Submitting a past or present timestamp will be rejected.
+- If `useAllowlist` is `true`, `merchantAllowlist` must contain **at least one** merchant name.
+
+### Example request
+
+```json title="POST /api/wallets"
+{
+  "name": "Purchasing Agent v1",
+  "userId": "user_2xKj9mNpQrT4vW8",
+  "spendLimitPerTx": 500000,
+  "spendLimitPeriod": 5000000,
+  "periodWindowDays": 30,
+  "expiry": "2027-01-01T00:00:00.000Z",
+  "useAllowlist": true,
+  "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"]
+}
+```
+
+### Example response
+
+```json title="201 Created"
+{
+  "status": "success",
+  "data": {
+    "wallet": {
+      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "name": "Purchasing Agent v1",
+      "userId": "user_2xKj9mNpQrT4vW8",
+      "status": "ACTIVE",
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 5000000,
+      "periodWindowDays": 30,
+      "balance": 0,
+      "expiry": "2027-01-01T00:00:00.000Z",
+      "useAllowlist": true,
+      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "virtualAccount": {
+      "accountNumber": "0123456789",
+      "accountName": "AXIS / PURCHASING AGENT V1",
+      "bankName": "Wema Bank",
+      "providerRef": "va_ref_7hXnM2pQkL"
+    },
+    "apiKey": {
+      "id": "key_01J9XKQ4ABCDE12345",
+      "keyPrefix": "ax_live_aBcD",
+      "fullKey": "ax_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    }
+  }
+}
+```
+
+The response contains three nested objects:
+
+- **`data.wallet`** — the wallet record with all configuration and current balance.
+- **`data.virtualAccount`** — the bank account details used to fund this wallet. Share `accountNumber`, `accountName`, and `bankName` with whoever needs to top up the agent's balance.
+- **`data.apiKey`** — the API key the agent uses to authenticate payment requests. Contains `fullKey` **only in this response** — it is never returned again.
+
+<Warning>
+  **Save `apiKey.fullKey` immediately.** Axis stores only a hashed version of the key. After this response, only the `keyPrefix` is visible — the `fullKey` cannot be recovered. If it is lost, you must revoke the key and issue a new one.
+</Warning>
+
+---
+
+## Retrieve a wallet
+
+```http
+GET /api/wallets/:walletId
+```
+
+Fetches the full wallet record, its linked virtual account, and a list of its API keys (prefixes only — no `fullKey`).
+
+### Example response
+
+```json title="200 OK"
+{
+  "status": "success",
+  "data": {
+    "wallet": {
+      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "name": "Purchasing Agent v1",
+      "userId": "user_2xKj9mNpQrT4vW8",
+      "status": "ACTIVE",
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 5000000,
+      "periodWindowDays": 30,
+      "balance": 120000,
+      "expiry": "2027-01-01T00:00:00.000Z",
+      "useAllowlist": true,
+      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    "virtualAccount": {
+      "accountNumber": "0123456789",
+      "accountName": "AXIS / PURCHASING AGENT V1",
+      "bankName": "Wema Bank",
+      "providerRef": "va_ref_7hXnM2pQkL"
+    },
+    "apiKeys": [
+      {
+        "id": "key_01J9XKQ4ABCDE12345",
+        "keyPrefix": "ax_live_aBcD",
+        "createdAt": "2026-07-21T09:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+Note that `apiKeys` is an array — a wallet may have multiple keys (e.g. after a rotation). Each entry shows only `keyPrefix`, not `fullKey`.
+
+---
+
+## List wallets for a user
+
+```http
+GET /api/wallets/user/:userId
+```
+
+Returns all wallets associated with a given user ID.
+
+### Example response
+
+```json title="200 OK"
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "wlt_01J9XKQ3MZYPBCNV7T84FRDE2G",
+      "name": "Purchasing Agent v1",
+      "userId": "user_2xKj9mNpQrT4vW8",
+      "status": "ACTIVE",
+      "spendLimitPerTx": 500000,
+      "spendLimitPeriod": 5000000,
+      "periodWindowDays": 30,
+      "balance": 120000,
+      "expiry": "2027-01-01T00:00:00.000Z",
+      "useAllowlist": true,
+      "merchantAllowlist": ["Shoprite", "Jumia", "Paystack"],
+      "createdAt": "2026-07-21T09:00:00.000Z"
+    },
+    {
+      "id": "wlt_02K0YLR4NAZBQDOM8U95GSEFH3",
+      "name": "Travel Booking Agent",
+      "userId": "user_2xKj9mNpQrT4vW8",
+      "status": "INACTIVE",
+      "spendLimitPerTx": 1000000,
+      "spendLimitPeriod": 10000000,
+      "periodWindowDays": 7,
+      "balance": 0,
+      "expiry": "2026-12-31T23:59:59.000Z",
+      "useAllowlist": false,
+      "merchantAllowlist": [],
+      "createdAt": "2026-07-18T14:30:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## Wallet status values
+
+Every wallet has a `status` field that reflects its current state:
+
+| Status | Meaning |
+|---|---|
+| `ACTIVE` | The wallet is operational. The agent can initiate payment intents up to its configured limits. |
+| `INACTIVE` | The wallet has been manually deactivated or its balance has been zeroed. Payment attempts will be declined. |
+| `EXPIRED` | The wallet's `expiry` datetime has passed. It is permanently inactive and cannot be reactivated. Create a new wallet to replace it. |
+
+---
+
+## React hook example
+
+The hook below wraps the wallet creation endpoint, stores the `apiKey.fullKey` securely, and clears it from memory once you have handed it to your secret store.
+
+```typescript title="src/hooks/useCreateWallet.ts"
+import { useState } from "react";
+
+interface CreateWalletPayload {
+  name: string;
+  userId: string;
+  spendLimitPerTx: number;
+  spendLimitPeriod: number;
+  periodWindowDays: number;
+  expiry: string;
+  useAllowlist: boolean;
+  merchantAllowlist?: string[];
+}
+
+interface VirtualAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  providerRef: string;
+}
+
+interface ApiKey {
+  id: string;
+  keyPrefix: string;
+  fullKey: string;
+  createdAt: string;
+}
+
+interface Wallet {
+  id: string;
+  name: string;
+  userId: string;
+  status: "ACTIVE" | "INACTIVE" | "EXPIRED";
+  spendLimitPerTx: number;
+  spendLimitPeriod: number;
+  periodWindowDays: number;
+  balance: number;
+  expiry: string;
+  useAllowlist: boolean;
+  merchantAllowlist: string[];
+  createdAt: string;
+}
+
+interface CreateWalletResult {
+  wallet: Wallet;
+  virtualAccount: VirtualAccount;
+  apiKey: ApiKey;
+}
+
+interface UseCreateWalletReturn {
+  createWallet: (payload: CreateWalletPayload) => Promise<CreateWalletResult>;
+  loading: boolean;
+  error: string | null;
+}
+
+export function useCreateWallet(apiBaseUrl = "/api"): UseCreateWalletReturn {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createWallet(
+    payload: CreateWalletPayload
+  ): Promise<CreateWalletResult> {
+    // Validate before hitting the network
+    if (payload.spendLimitPerTx > payload.spendLimitPeriod) {
+      throw new Error("spendLimitPerTx must be ≤ spendLimitPeriod");
+    }
+    if (new Date(payload.expiry) <= new Date()) {
+      throw new Error("expiry must be a future datetime");
+    }
+    if (payload.useAllowlist && !payload.merchantAllowlist?.length) {
+      throw new Error(
+        "merchantAllowlist must have at least one entry when useAllowlist is true"
+      );
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/wallets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(
+          err?.message ?? `Wallet creation failed (${response.status})`
+        );
+      }
+
+      const result = await response.json();
+      const data: CreateWalletResult = result.data;
+
+      // ⚠️  fullKey is only present in this response — persist it to a
+      // secure store (e.g. an encrypted backend vault or your secrets
+      // manager) before this function returns. Never log it or store it
+      // in localStorage / sessionStorage.
+      await persistApiKey(data.apiKey.fullKey, data.wallet.id);
+
+      return data;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Wallet creation failed";
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return { createWallet, loading, error };
+}
+
+/**
+ * Replace with your own secret storage logic.
+ * The fullKey should be sent server-side and stored encrypted —
+ * never kept in browser storage.
+ */
+async function persistApiKey(fullKey: string, walletId: string): Promise<void> {
+  await fetch("/api/internal/store-key", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ walletId, fullKey }),
+  });
+}
+```
+
+### Usage in a component
+
+```typescript title="src/components/CreateWalletForm.tsx"
+import { useCreateWallet } from "../hooks/useCreateWallet";
+
+export function CreateWalletForm({ userId }: { userId: string }) {
+  const { createWallet, loading, error } = useCreateWallet();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const wallet = await createWallet({
+      name: "Purchasing Agent v1",
+      userId,
+      spendLimitPerTx: 500_000,   // ₦5,000 in kobo
+      spendLimitPeriod: 5_000_000, // ₦50,000 in kobo
+      periodWindowDays: 30,
+      expiry: "2027-01-01T00:00:00.000Z",
+      useAllowlist: true,
+      merchantAllowlist: ["Shoprite", "Jumia"],
+    });
+
+    console.log("Wallet created:", wallet.wallet.id);
+    console.log("Fund via:", wallet.virtualAccount.accountNumber);
+    // wallet.apiKey.fullKey has already been persisted by the hook
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      <button type="submit" disabled={loading}>
+        {loading ? "Creating wallet…" : "Create wallet"}
+      </button>
+    </form>
+  );
+}
+```
+

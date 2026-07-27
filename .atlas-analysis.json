@@ -1,13 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Axis",
+  "projectType": "api-service",
+  "projectName": "Axis",
+  "projectDescription": "Payment infrastructure API that lets frontend applications provision scoped agent wallets, authorize transactions, and monitor spend — all via a structured REST API.",
   "theme": "luma",
-  "favicon": "/favicon.svg",
-  "colors": {
-    "primary": "#6C47FF",
-    "light": "#EDE9FF",
-    "dark": "#1A0A3C"
-  },
+  "primaryColor": "#6C47FF",
+  "lightColor": "#EDE9FF",
+  "darkColor": "#1A0A3C",
   "navigation": {
     "tabs": [
       {
@@ -94,10 +92,33 @@
       }
     ]
   },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/IfeMafia/Axis"
-    }
-  }
+  "keyFeatures": [
+    "Scoped agent wallets with per-transaction and per-period spend limits",
+    "Five-step authorization engine (status, expiry, tx limit, period limit, allowlist, balance)",
+    "Merchant allowlist mode — wallet can restrict which merchants an agent may pay",
+    "Virtual account funding — each wallet gets a unique account number for top-ups",
+    "Atomic double-entry ledger — every balance change is immutable and auditable",
+    "API-key authentication with bcrypt-hashed keys (prefix ax_live_…)",
+    "Session-based auth (JWT) for dashboard/developer UI flows",
+    "Blocked-transaction audit trail — every denied payment is recorded with a reason",
+    "Paginated transaction and ledger history per wallet",
+    "Wallet statistics endpoint for dashboard consumption"
+  ],
+  "publicApiSurface": [
+    "POST /v1/auth/signup",
+    "POST /v1/auth/login",
+    "POST /v1/auth/logout",
+    "POST /v1/onboarding",
+    "POST /api/wallets",
+    "GET  /api/wallets/:walletId",
+    "GET  /api/wallets/user/:userId",
+    "GET  /api/wallets/:walletId/transactions",
+    "GET  /api/wallets/:walletId/ledgers",
+    "GET  /v1/wallets/:id/stats",
+    "GET  /v1/wallets/:id/transactions",
+    "POST /api/payment-intent  (requires x-api-key header)",
+    "POST /api/webhooks",
+    "GET  /api/ledger",
+    "GET  /api/audit-events"
+  ]
 }

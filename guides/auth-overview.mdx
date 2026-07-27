@@ -1,0 +1,23 @@
+---
+title: "Authentication in Axis: two modes explained"
+sidebarTitle: "Auth Overview"
+description: "Axis uses JWT session tokens for dashboard and developer UI flows, and API keys for agent-to-backend calls. Learn which to use and when."
+---
+
+Axis has two distinct authentication modes designed for different actors in your system. **Session tokens (JWTs)** are intended for human-facing flows — think frontend dashboards, developer onboarding, and account management UI. **API keys** are intended for machine-to-machine calls — specifically, the autonomous agents that submit payment intents at runtime. Keeping these two modes separate means your users' credentials are never exposed inside agent code, and your agents never need to touch a login flow.
+
+## Comparison
+
+| Mode | Header | Use case |
+|---|---|---|
+| Session token (JWT) | `Authorization: Bearer <token>` | Frontend UI, developer dashboard, onboarding flows |
+| API key | `x-api-key: ax_live_...` | Agent runtime, automated payment calls |
+
+<Note>
+  API keys are **wallet-scoped** — each key authenticates as a specific wallet, not as a user account. A single user account can own multiple wallets, each with its own independent API key.
+</Note>
+
+## Next steps
+
+- [Session Auth](/guides/session-auth) — sign up, log in, and attach JWTs to frontend requests
+- [API Keys](/guides/api-key-auth) — use wallet API keys to authenticate agent payment calls
